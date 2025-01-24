@@ -1,12 +1,12 @@
+from django.core.validators import RegexValidator
 from django.utils import timezone
 import uuid
 
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin, AbstractUser
 
-from django.core.exceptions import ValidationError
-from django.core.validators import RegexValidator
 from django.db import models
+from rest_framework.exceptions import ValidationError
 
 
 def validate_avatar(value):
@@ -71,7 +71,7 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     objects = UserManager()
     USERNAME_FIELD = 'phone_number'
-    REQUIRED_FIELDS = []
+    REQUIRED_FIELDS = ['first_name', 'last_name', 'email']
 
     def generate_activation_code(self):
         self.activation_code = str(uuid.uuid4().int)[:6]
