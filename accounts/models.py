@@ -1,4 +1,5 @@
 from django.utils import timezone
+import uuid
 
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin, AbstractUser
@@ -11,6 +12,7 @@ from django.db import models
 def validate_avatar(value):
     if value and value.size > 2000000:
         raise ValidationError("Avatar image must be up to 2MB.")
+    return value
 
 
 class PhoneValidator(RegexValidator):
@@ -19,8 +21,6 @@ class PhoneValidator(RegexValidator):
 
 
 class UserManager(BaseUserManager):
-    """Custom user manager"""
-
     def create_user(self, phone_number, password, first_name, last_name, email, **other_fields):
         if not email:
             raise ValueError('You must provide an email address.')
@@ -56,7 +56,6 @@ class UserManager(BaseUserManager):
 
 
 class User(AbstractBaseUser, PermissionsMixin):
-    """Custom user model"""
     phone_number = models.CharField(validators=[PhoneValidator()],
                                     max_length=32, blank=False, null=False, unique=True)
     first_name = models.CharField(max_length=150)
@@ -65,7 +64,7 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     date_joined = models.DateTimeField(default=timezone.now)
     is_staff = models.BooleanField(default=False)
-    is_active = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=False)
     avatar = models.ImageField(blank=True, null=True)
     activation_code = models.CharField(max_length=64, blank=True, null=True)
     last_login = models.DateTimeField(blank=True, null=True)
@@ -73,6 +72,10 @@ class User(AbstractBaseUser, PermissionsMixin):
     objects = UserManager()
     USERNAME_FIELD = 'phone_number'
     REQUIRED_FIELDS = []
+
+    def generate_activation_code(self):
+        self.activation_code = str(uuid.uuid4().int)[:6]
+        self.save()
 
     def __str__(self):
         return self.phone_number

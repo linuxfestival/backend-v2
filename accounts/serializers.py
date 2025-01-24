@@ -1,18 +1,14 @@
 from django.contrib.auth.password_validation import validate_password
-from rest_framework import serializers
 from .models import User
+from rest_framework import serializers
 
 
 class UserPublicSerializer(serializers.ModelSerializer):
-    """Serializer for the User model"""
-
     class Meta:
         model = User
         fields = ['first_name', 'last_name', 'avatar']
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
-    """Serializer for user registration"""
-
     class Meta:
         model = User
         fields = ['first_name', 'last_name', 'email', 'phone_number', 'password']
@@ -28,6 +24,36 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
 
 class ChangePasswordSerializer(serializers.Serializer):
-    """Serializer for password change endpoint"""
     old_password = serializers.CharField(required=True, validators=[validate_password])
     new_password = serializers.CharField(required=True, validators=[validate_password])
+
+
+class SendVerificationSerializer(serializers.Serializer):
+    phone_number = serializers.CharField(max_length=15)
+
+    def validate(self, data):
+        phone_number = data.get("phone_number")
+        try:
+            User.objects.get(phone_number=phone_number)
+        except User.DoesNotExist:
+            raise serializers.ValidationError("Invalid phone number.")
+
+        return data
+
+
+class ActivateUserSerializer(serializers.Serializer):
+    phone_number = serializers.CharField(max_length=15)
+    code = serializers.CharField(max_length=6)
+
+    def validate(self, data):
+        phone_number = data.get("phone_number")
+        code = data.get("code")
+        try:
+            user = User.objects.get(phone_number=phone_number)
+        except User.DoesNotExist:
+            raise serializers.ValidationError("Invalid phone number.")
+
+        if user.activation_code != code:
+            raise serializers.ValidationError("Invalid activation code.")
+
+        return data

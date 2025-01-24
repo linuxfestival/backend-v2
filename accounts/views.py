@@ -2,10 +2,14 @@ from django.contrib.auth.models import AnonymousUser
 from rest_framework import viewsets, mixins, status
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, BasePermission
-from rest_framework.response import Response
 
 from . import serializers
 from .models import User
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from .serializers import SendVerificationSerializer, ActivateUserSerializer
+from .sms import SMSThread
 
 
 class IsSamePerson(BasePermission):
@@ -51,10 +55,41 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin, mixins.Des
 
     @action(methods=['POST'], detail=False, permission_classes=[])
     def signup(self, request):
-        # TODO: activation code not implemented
         serializer = serializers.UserRegistrationSerializer(data=request.data)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class SendVerificationView(APIView):
+    serializer_class = SendVerificationSerializer
+
+    def post(self, request):
+        serializer = self.serializer_class(data=request.data)
+        if serializer.is_valid():
+            phone_number = serializer.validated_data['phone_number']
+            user = User.objects.get(phone_number=phone_number)
+            user.generate_activation_code()
+
+            mobiles = [user.phone_number,]
+            SMSThread(f"Your Verification code is sent {user.activation_code}.", list(mobiles)).start()
+
+            return Response({"message": "Verification code sent to your phone."}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ActivateUserView(APIView):
+    serializer_class =  ActivateUserSerializer
+
+    def post(self, request):
+        serializer = self.serializer_class(data=request.data)
+        if serializer.is_valid():
+            phone_number = serializer.validated_data['phone_number']
+            user = User.objects.get(phone_number=phone_number)
+            user.is_active = True
+            user.save()
+            return Response({"message": "Phone number verified successfully."}, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
