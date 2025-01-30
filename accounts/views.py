@@ -1,7 +1,7 @@
 from django.contrib.auth.models import AnonymousUser
 from rest_framework import viewsets, mixins, status
 from rest_framework.decorators import action
-from rest_framework.permissions import AllowAny, BasePermission
+from rest_framework.permissions import BasePermission
 
 from . import serializers
 from .models import User
@@ -66,7 +66,7 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin, mixins.Des
             user.generate_activation_code()
 
             mobiles = [user.phone_number, ]
-            SMS_EXECUTOR.submit(send_sms, f"Your Verification code is sent {user.activation_code}.", list(mobiles))
+            SMS_EXECUTOR.submit(send_sms, list(mobiles), f"Your Verification code is sent {user.activation_code}.")
 
             return Response({"message": "Verification code sent to your phone."}, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

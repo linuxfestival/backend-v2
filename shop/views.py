@@ -29,10 +29,10 @@ class PresentationViewSet(viewsets.ViewSet):
         return Response(serializer.data)
 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
-    def participate(self, request):
+    def participate(self, request, pk=None):
         with transaction.atomic():
             try:
-                presentation = Presentation.objects.select_for_update().get(id=request.data.get('id'))
+                presentation = Presentation.objects.select_for_update().get(id=pk)
             except Presentation.DoesNotExist:
                 return Response({'error': 'No presentation found.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -110,8 +110,11 @@ class PaymentViewSet(viewsets.ViewSet):
             payment = Payment.objects.create(
                 total_price=total_price,
                 user=user,
-                coupon=coupon
+                coupon=coupon,
             )
+            for participation in participations:
+                payment.participations.add(participation)
+            payment.save()
 
             payping = PayPingRequest()
             response = payping.create_payment(
@@ -126,12 +129,12 @@ class PaymentViewSet(viewsets.ViewSet):
                 payment.delete()
                 if coupon:
                     Coupon.objects.filter(id=coupon.id).update(count=F('count') + 1)
-                return Response({'detail': 'Error creating payment link.'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'error': 'Error creating payment link.'}, status=status.HTTP_400_BAD_REQUEST)
 
             payment.payment_link = generatePayPingLink(response['code'])
             payment.save()
 
-        return Response(PaymentSerializer(payment).data, status=status.HTTP_201_CREATED)
+        return Response({PaymentSerializer(payment).data}, status=status.HTTP_201_CREATED)
 
     @action(methods=['post'], detail=False, permission_classes=[AllowAny], serializer_class=PaymentVerifySerializer)
     def verify(self, request):
@@ -162,8 +165,7 @@ class PaymentViewSet(viewsets.ViewSet):
             payment.hashed_card_number = verification_response.get('cardHashPan', 'Unknown')
             payment.trackID = ref_id
             payment.verified_date = timezone.now()
+            payment.participations.update(payment_state='COMPLETED')
             payment.save()
-
-            Participation.objects.filter(user=payment.user, payment_state='PENDING').update(payment_state='COMPLETED')
 
             return Response({'detail': 'Payment successfully verified.'}, status=status.HTTP_200_OK)

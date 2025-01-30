@@ -73,6 +73,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     USERNAME_FIELD = 'phone_number'
     REQUIRED_FIELDS = ['first_name', 'last_name', 'email']
 
+    def get_full_name(self):
+        return self.first_name + ' ' + self.last_name
+
     def generate_activation_code(self):
         self.activation_code = str(uuid.uuid4().int)[:6]
         self.save()

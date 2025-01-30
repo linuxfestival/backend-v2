@@ -44,9 +44,13 @@ class PayPingRequest:
         }
 
         response = requests.request(method='POST', headers=self.__headers, url=PayPing_URL, data=json.dumps(body))
-        json_response = json.loads(response.text)
-        if 'status' not in json_response:
-            json_response['status'] = response.status_code
+        json_response = {}
+        try:
+            json_response = json.loads(response.text)
+        except json.decoder.JSONDecodeError:
+            json_response['text'] = response.text
+
+        json_response['status'] = response.status_code
         return json_response
 
     def verify_payment(self, refId, amount):

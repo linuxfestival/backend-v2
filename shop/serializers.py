@@ -17,9 +17,9 @@ class PresentationSerializer(serializers.ModelSerializer):
         model = Presentation
         fields = [
             'service_type', 'capacity', 'start', 'end', 'description', 'title', 'remained_capacity',
-            'pk', 'cost', 'presenters', 'is_registration_active', 'presentation_link'
+            'id', 'cost', 'presenters', 'is_registration_active', 'presentation_link'
         ]
-        extra_kwargs = {'pk': {'read_only': True}, 'presentation_link': {'read_only': True}}
+        extra_kwargs = {'id': {'read_only': True}, 'presentation_link': {'read_only': True}}
 
 class ParticipationSerializer(serializers.ModelSerializer):
     payment_state = serializers.CharField(source='get_payment_state_display')
@@ -28,15 +28,15 @@ class ParticipationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Participation
-        fields = ['pk', 'presentation', 'payment_state', 'service_type']
-        extra_kwargs = {'pk': {'read_only': True}}
+        fields = ['id', 'presentation', 'payment_state', 'service_type']
+        extra_kwargs = {'id': {'read_only': True}}
 
 class PaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payment
-        fields = ['user', 'total_price', 'payment_state', 'payment_link', 'paymentID', 'trackID',
+        fields = ['user', 'total_price', 'payment_state', 'payment_link', 'paymentID', 'trackID', 'id',
                   'verifyID', 'hashed_card_number', 'created_date', 'verified_date', 'coupon']
-        extra_kwargs = {'pk': {'read_only': True}}
+        extra_kwargs = {'id': {'read_only': True}}
 
 class PayAllSerializer(serializers.ModelSerializer):
     coupon = serializers.CharField(required=False, allow_blank=True)

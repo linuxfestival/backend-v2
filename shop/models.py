@@ -53,6 +53,9 @@ class Presentation(models.Model):
     def get_remained_capacity(self):
         return self.capacity - Participation.objects.filter(presentation=self, payment_state="COMPLETED").count()
 
+    def participations(self):
+        return Participation.objects.filter(presentation=self)
+
     def __str__(self):
         return self.title
 
@@ -84,6 +87,7 @@ class Coupon(models.Model):
 class Payment(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='payments')
     total_price = models.FloatField(blank=False)
+    participations = models.ManyToManyField(Participation, related_name='payments')
     payment_state = models.CharField(choices=PAYMENT_STATES, default="PENDING", max_length=10)
 
     payment_link = models.URLField(null=True)
