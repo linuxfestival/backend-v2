@@ -37,3 +37,14 @@ class PaymentSerializer(serializers.ModelSerializer):
         fields = ['user', 'total_price', 'payment_state', 'payment_link', 'paymentID', 'trackID',
                   'verifyID', 'hashed_card_number', 'created_date', 'verified_date', 'coupon']
         extra_kwargs = {'pk': {'read_only': True}}
+
+class PayAllSerializer(serializers.ModelSerializer):
+    coupon = serializers.CharField(required=False, allow_blank=True)
+
+    class Meta:
+        model = Payment
+        fields = ['coupon']
+
+class PaymentVerifySerializer(serializers.Serializer):
+    refid = serializers.CharField()
+    clientrefid = serializers.IntegerField()

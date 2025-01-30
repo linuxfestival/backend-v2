@@ -51,7 +51,7 @@ class Presentation(models.Model):
             raise ValidationError("End time must be after start time.")
 
     def get_remained_capacity(self):
-        return self.capacity - Participation.objects.filter(presentation=self, payment_state=True).count()
+        return self.capacity - Participation.objects.filter(presentation=self, payment_state="COMPLETED").count()
 
     def __str__(self):
         return self.title
