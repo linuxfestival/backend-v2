@@ -30,8 +30,6 @@ SECRET_KEY = os.getenv("SECRET_KEY", default="key34572dfg57ll90xdvs234ghh$")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", default="False") == "True"
 
-ALLOWED_HOSTS = [os.getenv("Host", default="localhost")]
-
 # Custom
 AUTH_USER_MODEL = 'accounts.User'
 LOGIN_URL = 'accounts:token'
@@ -42,8 +40,15 @@ STATIC_URL = 'static/'
 MEDIA_ROOT = BASE_DIR / 'media'
 MEDIA_URL = 'media/'
 
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
+CSRF_TRUSTED_ORIGINS = ['https://localhost', 'https://127.0.0.1']
 CORS_ORIGIN_ALLOW_ALL = True
 USE_X_FORWARDED_HOST = True
+
+SMS_KEY = os.getenv("SMS_KEY", default="key")
+SMS_LINE_NUMBER = os.getenv("SMS_LINE_NUMBER", default="300")
+
+PAYPING_AUTH = os.getenv("PAYPING_AUTH", default="auth")
 
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (

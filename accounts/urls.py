@@ -4,6 +4,7 @@ from rest_framework import routers
 from . import views
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView, token_blacklist
 
+
 app_name = 'accounts'
 router = routers.DefaultRouter()
 router.register('users', views.UserViewSet, 'users')
