@@ -47,13 +47,9 @@ class ActivateUserSerializer(serializers.Serializer):
 
     def validate(self, data):
         phone_number = data.get("phone_number")
-        code = data.get("code")
         try:
-            user = User.objects.get(phone_number=phone_number)
+            User.objects.get(phone_number=phone_number)
         except User.DoesNotExist:
             raise serializers.ValidationError("Invalid phone number.")
-
-        if user.activation_code != code:
-            raise serializers.ValidationError("Invalid activation code.")
 
         return data

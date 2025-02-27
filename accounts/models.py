@@ -66,8 +66,11 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_staff = models.BooleanField(default=False)
     is_active = models.BooleanField(default=False)
     avatar = models.ImageField(blank=True, null=True)
-    activation_code = models.CharField(max_length=64, blank=True, null=True)
     last_login = models.DateTimeField(blank=True, null=True)
+
+    otp_code = models.CharField(max_length=64, blank=True, null=True)
+    last_otp_sent = models.DateTimeField(blank=True, null=True)
+
 
     objects = UserManager()
     USERNAME_FIELD = 'phone_number'

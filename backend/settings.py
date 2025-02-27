@@ -28,7 +28,7 @@ load_dotenv(BASE_DIR / ".env")
 SECRET_KEY = os.getenv("SECRET_KEY", default="key34572dfg57ll90xdvs234ghh$")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv("DEBUG", default="False") == "True"
+DEBUG = os.getenv("DEBUG", default="True") == "True"
 
 # Custom
 AUTH_USER_MODEL = 'accounts.User'

@@ -1,6 +1,4 @@
-import http.client
-import json
-
+from kavenegar import *
 from django.conf import settings
 from concurrent.futures import ThreadPoolExecutor
 
@@ -8,30 +6,28 @@ from concurrent.futures import ThreadPoolExecutor
 SMS_EXECUTOR = ThreadPoolExecutor(max_workers=10)
 API_KEY = settings.SMS_KEY
 LINE_NUMBER = settings.SMS_LINE_NUMBER
+OTP_VALIDITY_PERIOD = 120 # 2 minutes
+OTP_RESEND_DELAY = 60  # 1 minute
 
 def send_sms(mobiles, message_text):
-    payload = json.dumps({
-        "lineNumber": LINE_NUMBER,
-        "messageText": message_text,
-        "mobiles": mobiles,
-        "sendDateTime": None
-    })
-
-    headers = {
-        'X-API-KEY': API_KEY,
-        'Content-Type': 'application/json'
-    }
-
     try:
-        conn = http.client.HTTPSConnection("api.sms.ir")
-        conn.request("POST", "/v1/send/bulk", payload, headers)
-        res = conn.getresponse()
-        status, response = res.status, res.read()
+        api = KavenegarAPI(API_KEY)
 
-        if status == 200:
-            print(f"SMS successfully sent to {mobiles}: {response.decode('utf-8')}")
-        else:
-            print(f"Services failed to send SMS: {response.decode('utf-8')}")
+        receptor = ''
+        for mobile in mobiles: receptor += mobile + ', '
+        receptor = receptor[:-2]
+
+        params = {
+            'sender': str(LINE_NUMBER),  # optional
+            'receptor': receptor,
+            'message': message_text,
+        }
+        response = api.sms_send(params)
+        print(response)
+    except APIException as e:
+        print(e)
+    except HTTPException as e:
+        print(e)
 
     except Exception as e:
         print(f"Server failed to send SMS: {e}")
