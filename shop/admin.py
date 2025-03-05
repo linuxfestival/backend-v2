@@ -1,4 +1,7 @@
 from django.contrib import admin
+from django.http import JsonResponse
+from django.template.defaultfilters import title
+
 from accounts.sms import SMS_EXECUTOR, send_sms
 from shop.models import Presenter, Presentation, Participation, Coupon, Payment
 
@@ -11,7 +14,7 @@ admin.site.register(Payment)
 @admin.register(Presentation)
 class PresentationAdmin(admin.ModelAdmin):
     list_display = ('__str__', 'capacity', 'get_remained_capacity', 'start')
-    actions = ('send_registration_sms',)
+    actions = ('send_registration_sms', 'export_registrations')
 
     class Meta:
         model = Presentation
@@ -34,3 +37,20 @@ class PresentationAdmin(admin.ModelAdmin):
 
             if mobiles:
                 SMS_EXECUTOR.submit(send_sms, list(mobiles), message_text)
+
+
+    @admin.action(description='Export registrations')
+    def export_registrations(self, request, queryset):
+        data = {}
+
+        for presentation in queryset:
+            data[presentation.title] = {}
+            for participation in Participation.objects.filter(payment_state="COMPLETED"):
+                user = participation.user
+                data[presentation.title][user.phone_number] = {
+                    'name': user.first_name + " " + user.last_name,
+                    'email': user.email,
+                }
+
+        return JsonResponse(data)
+

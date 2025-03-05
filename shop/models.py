@@ -1,3 +1,5 @@
+from http.cookiejar import domain_match
+
 from django.db import models
 from django.conf import settings
 from rest_framework.exceptions import ValidationError
@@ -40,9 +42,14 @@ class Presentation(models.Model):
 
     description = models.TextField(blank=False)
     capacity = models.IntegerField(blank=False)
-    cost = models.FloatField(blank=False)
     is_registration_active = models.BooleanField(default=True)
     presentation_link = models.URLField(blank=True)
+    cost = models.FloatField(blank=False)
+
+    accessories = models.CharField(max_length=100, blank=False)
+    accessories_capacity = models.IntegerField(blank=False)
+    accessories_cost = models.FloatField(blank=False)
+
 
     def clean(self):
         if self.cost < 0:
@@ -64,6 +71,7 @@ class Participation(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='participations')
     presentation = models.ForeignKey(Presentation, on_delete=models.CASCADE, related_name='participations')
     payment_state = models.CharField(choices=PAYMENT_STATES, default="PENDING", max_length=10)
+    has_accessories = models.BooleanField(default=False)
 
     def __str__(self):
         return f'{self.user.phone_number} - {self.presentation.title}'
@@ -72,7 +80,7 @@ class Participation(models.Model):
 class Coupon(models.Model):
     name = models.CharField(max_length=50, primary_key=True, help_text="Don't use / in the name.")
     count = models.PositiveIntegerField(null=False, blank=False)
-    percentage = models.FloatField(default=0.0, help_text='Enter a number between 0 to 100.')
+    percentage = models.IntegerField(default=0.0, help_text='Enter a number between 0 to 100.')
 
     def __str__(self):
         return self.name
@@ -90,11 +98,10 @@ class Payment(models.Model):
     participations = models.ManyToManyField(Participation, related_name='payments')
     payment_state = models.CharField(choices=PAYMENT_STATES, default="PENDING", max_length=10)
 
-    payment_link = models.URLField(null=True)
-    paymentID = models.CharField(null=True, max_length=42)
-    trackID = models.CharField(null=True, max_length=20)
-    verifyID = models.CharField(null=True, max_length=20)
-    hashed_card_number = models.TextField(null=True)
+    authority = models.CharField(null=True, max_length=100)
+    pay_link = models.URLField(null=True)
+    ref_id = models.CharField(null=True, max_length=100)
+    card_pan = models.TextField(null=True)
 
     created_date = models.DateTimeField(auto_now_add=True)
     verified_date = models.DateTimeField(null=True, blank=True)

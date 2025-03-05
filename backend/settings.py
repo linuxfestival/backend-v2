@@ -48,7 +48,8 @@ USE_X_FORWARDED_HOST = True
 SMS_KEY = os.getenv("SMS_KEY", default="key")
 SMS_LINE_NUMBER = os.getenv("SMS_LINE_NUMBER", default="300")
 
-PAYPING_AUTH = os.getenv("PAYPING_AUTH", default="auth")
+PAYMENT_API_KEY = os.getenv("PAYPING_AUTH", default="auth")
+PAYMENT_CALLBACK_URL = os.getenv("PAYMENT_CALLBACK_URL", default="callback")
 
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
