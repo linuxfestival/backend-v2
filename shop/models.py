@@ -1,5 +1,3 @@
-from http.cookiejar import domain_match
-
 from django.db import models
 from django.conf import settings
 from rest_framework.exceptions import ValidationError
@@ -59,6 +57,9 @@ class Presentation(models.Model):
 
     def get_remained_capacity(self):
         return self.capacity - Participation.objects.filter(presentation=self, payment_state="COMPLETED").count()
+
+    def get_remained_accessories(self):
+        return self.accessories_capacity - Participation.objects.filter(presentation=self, has_accessories=True).count()
 
     def participations(self):
         return Participation.objects.filter(presentation=self)

@@ -40,10 +40,10 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin, mixins.Des
         serializer = serializers.ChangePasswordSerializer(data=request.data)
         if serializer.is_valid():
             if not request.user.check_password(serializer.validated_data["old_password"]):
-                return Response({"message": "Old password is incorrect"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"detail": "Old password is incorrect"}, status=status.HTTP_400_BAD_REQUEST)
             request.user.set_password(serializer.validated_data["new_password"])
             request.user.save()
-            return Response({"message": "Password updated successfully"}, status=status.HTTP_200_OK)
+            return Response({"detail": "Password updated successfully"}, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -69,10 +69,10 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin, mixins.Des
             try:
                 user = User.objects.get(phone_number=phone_number)
             except User.DoesNotExist:
-                return Response({"message": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+                return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
 
             if user.last_otp_sent and (now() - user.last_otp_sent).seconds < OTP_RESEND_DELAY:
-                return Response({"message": "Please wait before requesting another OTP."},
+                return Response({"detail": "Please wait before requesting another OTP."},
                                 status=status.HTTP_429_TOO_MANY_REQUESTS)
 
             secret_key = pyotp.random_base32()
@@ -86,7 +86,7 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin, mixins.Des
             mobiles = [user.phone_number,]
             SMS_EXECUTOR.submit(send_sms, mobiles, f"Your verification code is {otp}.")
 
-            return Response({"message": "Verification code sent to your phone."}, status=status.HTTP_200_OK)
+            return Response({"detail": "Verification code sent to your phone."}, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -103,19 +103,19 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin, mixins.Des
             try:
                 user = User.objects.get(phone_number=phone_number)
             except User.DoesNotExist:
-                return Response({"message": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+                return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
 
             if not user.otp_code:
-                return Response({"message": "No OTP generated for this user."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"detail": "No OTP generated for this user."}, status=status.HTTP_400_BAD_REQUEST)
 
             totp = pyotp.TOTP(user.otp_code, interval=OTP_VALIDITY_PERIOD)
             if not totp.verify(otp):
-                return Response({"message": "Invalid or expired activation code"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"detail": "Invalid or expired activation code"}, status=status.HTTP_400_BAD_REQUEST)
 
             user.is_active = True
             user.otp_code = ""
             user.save()
 
-            return Response({"message": "Phone number verified successfully."}, status=status.HTTP_200_OK)
+            return Response({"detail": "Phone number verified successfully."}, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

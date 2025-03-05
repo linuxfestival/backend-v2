@@ -1,35 +1,37 @@
 from django.db import transaction
 from django.utils import timezone
+from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.generics import get_object_or_404
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 
 from .models import Presentation, Participation, Payment, Coupon
 from .payments import ZarrinPal
-from .serializers import PresentationSerializer, ParticipationSerializer, PayAllSerializer, PaymentVerifySerializer
+from .serializers import PresentationSerializer, ParticipationSerializer, PayAllSerializer, PaymentVerifySerializer, \
+    CartSerializer
 
 
 class PresentationViewSet(viewsets.ViewSet):
-    serializer_class = PresentationSerializer
-
-    @action(detail=False, methods=['get'], serializer_class=PresentationSerializer)
+    @swagger_auto_schema(responses={200: PresentationSerializer(many=True)})
+    @action(detail=False, methods=['get'], permission_classes=[AllowAny],)
     def all(self, request):
         presentations = Presentation.objects.all()
         serializer = PresentationSerializer(presentations, many=True)
         return Response(serializer.data)
 
-    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated],
-            serializer_class=ParticipationSerializer)
+    @swagger_auto_schema(responses={200: CartSerializer(many=True)})
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def cart(self, request):
         participations = Participation.objects.filter(user=request.user)
-        serializer = ParticipationSerializer(participations, many=True)
+        serializer = CartSerializer(participations, many=True)
         return Response(serializer.data)
 
+    @swagger_auto_schema(request_body=ParticipationSerializer, responses={201: "detail"})
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     @transaction.atomic
-    def participate(self, request):
+    def add_participation(self, request):
         try:
             serializer = ParticipationSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
@@ -48,9 +50,23 @@ class PresentationViewSet(viewsets.ViewSet):
             return Response({'detail': 'Registration is closed for this presentation.'},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        if presentation.get_remained_capacity() <= 0:
-            return Response({'detail': 'No remaining capacity for this presentation.'},
-                            status=status.HTTP_400_BAD_REQUEST)
+        if presentation.get_remained_capacity() < 1:
+            return Response(
+                {'detail': f'No remaining capacity for presentation {presentation.title}.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if presentation.start <= timezone.now():
+            return Response(
+                {'detail': f'Presentation {presentation.title} has already started.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if has_accessories and presentation.get_remained_accessories() < 1:
+            return Response(
+                {'detail': f'Accessories for presentation {presentation.title} are not available.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         participation = Participation.objects.create(
             user=request.user,
@@ -59,11 +75,39 @@ class PresentationViewSet(viewsets.ViewSet):
             has_accessories=has_accessories,
         )
 
-        return Response(ParticipationSerializer(participation).data, status=status.HTTP_201_CREATED)
+        return Response({"detail" : "Participation created successfully."}, status=status.HTTP_201_CREATED)
+
+    @swagger_auto_schema(responses={200: "detail"})
+    @action(detail=True, methods=['delete'], permission_classes=[IsAuthenticated])
+    @transaction.atomic
+    def remove_participation(self, request, pk=None):
+        try:
+            participation = Participation.objects.select_for_update().get(id=pk)
+        except Participation.DoesNotExist:
+            return Response({'detail': 'Participation not found or you do not have permission to remove it.'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        presentation = participation.presentation
+        if presentation.start <= timezone.now():
+            return Response(
+                {'detail': f'Cannot remove participation; presentation {presentation.title} has already started.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if participation.payment_state == "COMPLETED":
+            return Response(
+                {'detail': f'Cannot remove participation; presentation {presentation.title} has already completed.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        participation.delete()
+
+        return Response({'detail': 'Participation removed successfully.'}, status=status.HTTP_200_OK)
 
 
 class PaymentViewSet(viewsets.ViewSet):
-    @action(methods=['post'], detail=False, permission_classes=[IsAuthenticated], serializer_class=PayAllSerializer)
+    @swagger_auto_schema(request_body=PayAllSerializer, responses={200: 'payment_url, authority'})
+    @action(methods=['post'], detail=False, permission_classes=[IsAuthenticated])
     @transaction.atomic
     def pay_all(self, request):
         user = request.user
@@ -75,6 +119,31 @@ class PaymentViewSet(viewsets.ViewSet):
         if not participations.exists():
             return Response({"detail": "No pending participations found."},
                             status=status.HTTP_400_BAD_REQUEST)
+
+        for participation in participations:
+            presentation = participation.presentation
+
+            if presentation.start <= timezone.now():
+                return Response(
+                    {'detail': f'Presentation {presentation.title} has already started.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if not presentation.is_registration_active:
+                return Response({'detail': 'Registration is closed for this presentation.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+            if presentation.get_remained_capacity() < 1:
+                return Response(
+                    {'detail': f'No remaining capacity for presentation {presentation.title}.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if participation.has_accessories and presentation.get_remained_accessories() < 1:
+                return Response(
+                    {'detail': f'Accessories for presentation {presentation.title} are not available.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
         total_price = sum(
             p.presentation.cost + (p.presentation.accessories_cost if p.has_accessories else 0)
@@ -95,7 +164,7 @@ class PaymentViewSet(viewsets.ViewSet):
             total_price=total_price,
             coupon=coupon,
         )
-        payment.participations = participations
+        payment.participations.set(participations)
 
         zarrinpal = ZarrinPal()
         zarrinpal_response = zarrinpal.create_payment(
@@ -107,9 +176,7 @@ class PaymentViewSet(viewsets.ViewSet):
         if zarrinpal_response['status'] == 'success':
             authority = zarrinpal_response['authority']
             payment.authority = authority
-
-            pay_link = zarrinpal.generate_response(authority)
-            payment.pay_link = pay_link
+            payment.pay_link = zarrinpal_response['link']
             payment.save()
 
             participations.update(payment_state="PENDING")
@@ -118,7 +185,7 @@ class PaymentViewSet(viewsets.ViewSet):
                 coupon.save()
 
             return Response({
-                "payment_url": pay_link,
+                "payment_url": payment.pay_link,
                 "authority": authority
             }, status=status.HTTP_200_OK)
         else:
@@ -129,9 +196,8 @@ class PaymentViewSet(viewsets.ViewSet):
                 "error": zarrinpal_response.get('error')
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
-    @action(methods=['post'], detail=False, permission_classes=[IsAuthenticated],
-            serializer_class=PaymentVerifySerializer)
+    @swagger_auto_schema(request_body=PaymentVerifySerializer, responses={200: 'detail, ref_id, card_pan, amount'})
+    @action(methods=['post'], detail=False, permission_classes=[IsAuthenticated])
     @transaction.atomic
     def verify(self, request):
         serializer = PaymentVerifySerializer(data=request.data)
@@ -168,8 +234,6 @@ class PaymentViewSet(viewsets.ViewSet):
         else:
             payment.payment_state = "FAILED"
             payment.save()
-
-            payment.participations.update(payment_state="PENDING")
 
             return Response({
                 "detail": "Payment verification failed.",

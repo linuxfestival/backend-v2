@@ -19,8 +19,9 @@ class ZarrinPal:
     STATUS_FAILED = 51
 
 
-    def generate_response(self, authority):
-        self.START_PAY_URL.format(authority=authority)
+    def generate_link(self, authority):
+        link = self.START_PAY_URL
+        return link.format(authority=authority)
 
 
     def create_payment(self, amount, mobile, email):
@@ -49,14 +50,14 @@ class ZarrinPal:
                     'status': 'success',
                     'authority': response_data.get('authority'),
                     'error': None,
-                    'link': None
+                    'link': self.generate_link(response_data.get('authority'))
                 }
             else:
                 return {
                     'status': 'failed',
                     'authority': None,
                     'error': response_data.get('message'),
-                    'link': self.generate_response(response_data.get('authority'))
+                    'link': None
                 }
         except requests.RequestException as e:
             return {
@@ -81,6 +82,7 @@ class ZarrinPal:
 
         try:
             response = requests.post(self.VERIFY_URL, json=data, headers=headers)
+            print(response.json())
             response_data = response.json().get('data', {})
             code = response_data.get('code')
 

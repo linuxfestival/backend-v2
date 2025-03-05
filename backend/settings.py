@@ -28,7 +28,7 @@ load_dotenv(BASE_DIR / ".env")
 SECRET_KEY = os.getenv("SECRET_KEY", default="key34572dfg57ll90xdvs234ghh$")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv("DEBUG", default="True") == "True"
+DEBUG = os.getenv("DEBUG", default="False") == "True"
 
 # Custom
 AUTH_USER_MODEL = 'accounts.User'
@@ -48,7 +48,7 @@ USE_X_FORWARDED_HOST = True
 SMS_KEY = os.getenv("SMS_KEY", default="key")
 SMS_LINE_NUMBER = os.getenv("SMS_LINE_NUMBER", default="300")
 
-PAYMENT_API_KEY = os.getenv("PAYPING_AUTH", default="auth")
+PAYMENT_API_KEY = os.getenv("PAYMENT_API_KEY", default="auth")
 PAYMENT_CALLBACK_URL = os.getenv("PAYMENT_CALLBACK_URL", default="callback")
 
 REST_FRAMEWORK = {
