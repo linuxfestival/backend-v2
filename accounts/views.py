@@ -7,7 +7,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import BasePermission
 
 from . import serializers
-from .models import User
+from .models import User, Staff
 from rest_framework.response import Response
 from .sms import SMS_EXECUTOR, send_sms, OTP_VALIDITY_PERIOD, OTP_RESEND_DELAY
 
@@ -23,6 +23,10 @@ class IsSamePerson(BasePermission):
             return request.user and not isinstance(request.user, AnonymousUser) and request.user.pk == obj.pk
         except AttributeError:
             return False
+
+class StaffViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    queryset = Staff.objects.all()
+    serializer_class = serializers.StaffSerializer
 
 
 class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin, mixins.DestroyModelMixin,

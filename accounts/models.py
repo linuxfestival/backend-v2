@@ -1,3 +1,5 @@
+from enum import Enum
+
 from django.core.validators import RegexValidator
 from django.utils import timezone
 import uuid
@@ -90,3 +92,32 @@ class User(AbstractBaseUser, PermissionsMixin):
         if self.email:
             self.email = self.email.lower()
         super(User, self).save(*args, **kwargs)
+
+class RoleEnum(Enum):
+    DIRECTOR = "Director"
+    HEAD = "Head"
+    STAFF = "Staff"
+
+class TeamEnum(Enum):
+    TECHNICAL = "Technical"
+    MARKETING = "Marketing"
+    SCIENTIFIC = "Scientific"
+    EXECUTIVE = "Executive"
+    MEDIA = "Media"
+    DECORATION = "Decoration"
+    GRAPHICS = "Graphics"
+    DIRECTOR = "Director"
+
+ROLE_CHOICES = [(role.name, role.value) for role in RoleEnum]
+TEAM_CHOICES = [(dept.name, dept.value) for dept in TeamEnum]
+
+class Staff(models.Model):
+    name = models.CharField(max_length=255)
+    image = models.ImageField(upload_to='staff_images/')
+    quote = models.TextField()
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES)
+    team = models.CharField(max_length=15, choices=TEAM_CHOICES)
+
+    def __str__(self):
+        return f"{self.name} - {self.get_team_display()} ({self.get_role_display()})"
+

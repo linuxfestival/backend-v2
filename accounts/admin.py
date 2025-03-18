@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User
+from .models import User, Staff
+
 
 class UserAdmin(BaseUserAdmin):
     ordering = ['date_joined']
@@ -10,3 +11,7 @@ class UserAdmin(BaseUserAdmin):
     filter_horizontal = ('groups', 'user_permissions')
 
 admin.site.register(User, UserAdmin)
+
+@admin.register(Staff)
+class StaffAdmin(admin.ModelAdmin):
+    pass
