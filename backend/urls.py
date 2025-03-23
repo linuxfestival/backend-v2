@@ -17,28 +17,17 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from django.conf.urls.static import static
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
 
-from rest_framework import permissions
-from drf_yasg.views import get_schema_view
-from drf_yasg import openapi
 
 from . import settings
-
-schema_view = get_schema_view(
-    openapi.Info(
-        title="Linux Festival API",
-        default_version='v1',
-        license=openapi.License(name="MIT License"),
-    ),
-    public=True,
-    permission_classes=[permissions.AllowAny],
-)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('accounts.urls')),
     path('api/', include('shop.urls')),
-    path('api/swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
+    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
+    path('api/swagger/', SpectacularSwaggerView.as_view(), name='schema-swagger-ui'),
 ]
 
 if settings.DEBUG:
