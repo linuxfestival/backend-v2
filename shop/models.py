@@ -106,7 +106,7 @@ class Payment(models.Model):
 
     created_date = models.DateTimeField(auto_now_add=True)
     verified_date = models.DateTimeField(null=True, blank=True)
-    coupon = models.ForeignKey(Coupon, on_delete=models.SET_NULL, default=None, null=True)
+    coupon = models.ForeignKey(Coupon, on_delete=models.SET_NULL, default=None, null=True, blank=True)
 
     def __str__(self):
         return f'Payment {self.pk} - {self.user.phone_number} - {self.total_price}'

@@ -60,3 +60,8 @@ class PayAllSerializer(serializers.ModelSerializer):
 
 class PaymentVerifySerializer(serializers.Serializer):
     authority = serializers.CharField()
+
+class PaymentListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Payment
+        fields = '__all__'

@@ -10,12 +10,12 @@ from rest_framework.response import Response
 from .models import Presentation, Participation, Payment, Coupon
 from .payments import ZarrinPal
 from .serializers import PresentationSerializer, ParticipationSerializer, PayAllSerializer, PaymentVerifySerializer, \
-    CartSerializer
+    CartSerializer, PaymentListSerializer
 
 
 class PresentationViewSet(viewsets.ViewSet):
     @swagger_auto_schema(responses={200: PresentationSerializer(many=True)})
-    @action(detail=False, methods=['get'], permission_classes=[AllowAny],)
+    @action(detail=False, methods=['get'], permission_classes=[AllowAny], )
     def all(self, request):
         presentations = Presentation.objects.all()
         serializer = PresentationSerializer(presentations, many=True)
@@ -75,7 +75,7 @@ class PresentationViewSet(viewsets.ViewSet):
             has_accessories=has_accessories,
         )
 
-        return Response({"detail" : "Participation created successfully."}, status=status.HTTP_201_CREATED)
+        return Response({"detail": "Participation created successfully."}, status=status.HTTP_201_CREATED)
 
     @swagger_auto_schema(responses={200: "detail"})
     @action(detail=True, methods=['delete'], permission_classes=[IsAuthenticated])
@@ -239,3 +239,11 @@ class PaymentViewSet(viewsets.ViewSet):
                 "detail": "Payment verification failed.",
                 "error": zarrinpal_response.get('error')
             }, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(responses={200: PaymentListSerializer(many=True)})
+    @action(methods=['get'], detail=False, permission_classes=[IsAuthenticated])
+    @transaction.atomic
+    def get_list(self, request):
+        payments = Payment.objects.filter(user=request.user)
+        serializer = PaymentListSerializer(payments, many=True)
+        return Response(serializer.data)
