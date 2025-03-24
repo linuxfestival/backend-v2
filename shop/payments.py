@@ -102,7 +102,7 @@ class ZarrinPal:
                 }
         except requests.RequestException as e:
             return {
-                'status': 'error',
+                'status': 'unexpected',
                 'ref_id': None,
                 'error': str(e),
                 'card_pan': None,
