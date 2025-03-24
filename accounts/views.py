@@ -29,7 +29,7 @@ class StaffViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     serializer_class = serializers.StaffSerializer
 
 
-class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin, mixins.DestroyModelMixin,
+class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin,
                   viewsets.GenericViewSet):
 
     queryset = User.objects.all()
