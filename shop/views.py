@@ -1,5 +1,6 @@
 from django.db import transaction
 from django.utils import timezone
+from drf_spectacular.utils import extend_schema
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -14,31 +15,26 @@ from .serializers import PresentationSerializer, ParticipationSerializer, PayAll
 
 
 class PresentationViewSet(viewsets.ViewSet):
-    @swagger_auto_schema(responses={200: PresentationSerializer(many=True)})
+    @extend_schema(responses={200: PresentationSerializer(many=True)})
     @action(detail=False, methods=['get'], permission_classes=[AllowAny], )
     def all(self, request):
         presentations = Presentation.objects.all()
         serializer = PresentationSerializer(presentations, many=True)
         return Response(serializer.data)
 
-    @swagger_auto_schema(responses={200: CartSerializer(many=True)})
+    @extend_schema(responses={200: CartSerializer(many=True)})
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def cart(self, request):
         participations = Participation.objects.filter(user=request.user)
         serializer = CartSerializer(participations, many=True)
         return Response(serializer.data)
 
-    @swagger_auto_schema(request_body=ParticipationSerializer, responses={201: "detail"})
-    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
+    @extend_schema(responses={201: "detail"})
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     @transaction.atomic
-    def add_participation(self, request):
+    def add_participation(self, request, pk=None):
         try:
-            serializer = ParticipationSerializer(data=request.data)
-            serializer.is_valid(raise_exception=True)
-            presentation_id = serializer.data['presentation_id']
-            has_accessories = serializer.data['has_accessories']
-
-            presentation = Presentation.objects.select_for_update().get(id=presentation_id)
+            presentation = Presentation.objects.select_for_update().get(id=pk)
         except Presentation.DoesNotExist:
             return Response({'error': 'No presentation found.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -62,22 +58,15 @@ class PresentationViewSet(viewsets.ViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if has_accessories and presentation.get_remained_accessories() < 1:
-            return Response(
-                {'detail': f'Accessories for presentation {presentation.title} are not available.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
         participation = Participation.objects.create(
             user=request.user,
             presentation=presentation,
             payment_state='PENDING',
-            has_accessories=has_accessories,
         )
 
         return Response({"detail": "Participation created successfully."}, status=status.HTTP_201_CREATED)
 
-    @swagger_auto_schema(responses={200: "detail"})
+    @extend_schema(responses={200: "detail"})
     @action(detail=True, methods=['delete'], permission_classes=[IsAuthenticated])
     @transaction.atomic
     def remove_participation(self, request, pk=None):
@@ -106,7 +95,7 @@ class PresentationViewSet(viewsets.ViewSet):
 
 
 class PaymentViewSet(viewsets.ViewSet):
-    @swagger_auto_schema(request_body=PayAllSerializer, responses={200: 'payment_url, authority'})
+    @extend_schema(request=PayAllSerializer, responses={200: 'payment_url, authority'})
     @action(methods=['post'], detail=False, permission_classes=[IsAuthenticated])
     @transaction.atomic
     def pay_all(self, request):
@@ -196,7 +185,7 @@ class PaymentViewSet(viewsets.ViewSet):
                 "error": zarrinpal_response.get('error')
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    @swagger_auto_schema(request_body=PaymentVerifySerializer, responses={200: 'detail, ref_id, card_pan, amount'})
+    @extend_schema(request=PaymentVerifySerializer, responses={200: 'detail, ref_id, card_pan, amount'})
     @action(methods=['post'], detail=False, permission_classes=[IsAuthenticated])
     @transaction.atomic
     def verify(self, request):
@@ -240,7 +229,7 @@ class PaymentViewSet(viewsets.ViewSet):
                 "error": zarrinpal_response.get('error')
             }, status=status.HTTP_400_BAD_REQUEST)
 
-    @swagger_auto_schema(responses={200: PaymentListSerializer(many=True)})
+    @extend_schema(responses={200: PaymentListSerializer(many=True)})
     @action(methods=['get'], detail=False, permission_classes=[IsAuthenticated])
     @transaction.atomic
     def get_list(self, request):

@@ -38,7 +38,6 @@ class CartSerializer(serializers.ModelSerializer):
 
 
 class ParticipationSerializer(serializers.Serializer):
-    has_accessories = serializers.BooleanField(required=True)
     presentation_id = serializers.CharField(required=True)
 
 
