@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, Staff
+from .models import User, Staff, FAQ
 
 
 class UserAdmin(admin.ModelAdmin):
@@ -11,7 +11,7 @@ class UserAdmin(admin.ModelAdmin):
     filter_horizontal = ('groups', 'user_permissions')
 
 admin.site.register(User, UserAdmin)
-
+admin.site.register(FAQ)
 @admin.register(Staff)
 class StaffAdmin(admin.ModelAdmin):
     pass

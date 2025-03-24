@@ -8,6 +8,7 @@ app_name = 'accounts'
 router = routers.DefaultRouter()
 router.register('users', views.UserViewSet, 'users')
 router.register('staff', views.StaffViewSet, 'staff')
+router.register('faq', views.FAQViewSet, 'faq')
 
 urlpatterns = [
                   # flush expired tokens on a daily basis.

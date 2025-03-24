@@ -7,8 +7,10 @@ from rest_framework.decorators import action
 from rest_framework.permissions import BasePermission
 
 from . import serializers
-from .models import User, Staff
+from .models import User, Staff, FAQ
 from rest_framework.response import Response
+
+from .serializers import FAQSerializer
 from .sms import SMS_EXECUTOR, send_sms, OTP_VALIDITY_PERIOD, OTP_RESEND_DELAY
 
 
@@ -123,3 +125,7 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin,
             return Response({"detail": "Phone number verified successfully."}, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class FAQViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    queryset = FAQ.objects.all()
+    serializer_class = FAQSerializer

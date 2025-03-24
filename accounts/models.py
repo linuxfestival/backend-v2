@@ -121,3 +121,9 @@ class Staff(models.Model):
     def __str__(self):
         return f"{self.name} - {self.get_team_display()} ({self.get_role_display()})"
 
+class FAQ(models.Model):
+    question = models.CharField(max_length=255)
+    answer = models.CharField(max_length=1023)
+
+    def __str__(self):
+        return self.question

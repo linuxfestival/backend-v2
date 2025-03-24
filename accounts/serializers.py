@@ -1,5 +1,5 @@
 from django.contrib.auth.password_validation import validate_password
-from .models import User, Staff
+from .models import User, Staff, FAQ
 from rest_framework import serializers
 
 
@@ -27,6 +27,11 @@ class StaffSerializer(serializers.ModelSerializer):
     class Meta:
         model = Staff
         fields = '__all__'
+
+class FAQSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FAQ
+        fields = ['question', 'answer']
 
 
 class ChangePasswordSerializer(serializers.Serializer):
