@@ -37,8 +37,11 @@ class CartSerializer(serializers.ModelSerializer):
                         , 'presentation': {'read_only': True}, 'id': {'read_only': True}}
 
 
-class ParticipationSerializer(serializers.Serializer):
-    presentation_id = serializers.CharField(required=True)
+class ParticipationSerializer(serializers.ModelSerializer):
+    presentation = PresentationSerializer(read_only=True)
+    class Meta:
+        fields = '__all__'
+        model = Participation
 
 
 class PaymentSerializer(serializers.ModelSerializer):
@@ -61,6 +64,7 @@ class PaymentVerifySerializer(serializers.Serializer):
     authority = serializers.CharField()
 
 class PaymentListSerializer(serializers.ModelSerializer):
+    participations = ParticipationSerializer(many=True, read_only=True)
     class Meta:
         model = Payment
         fields = '__all__'

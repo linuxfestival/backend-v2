@@ -187,15 +187,13 @@ AWS_SECRET_ACCESS_KEY   = LIARA_SECRET_KEY
 AWS_STORAGE_BUCKET_NAME = LIARA_BUCKET_NAME
 AWS_S3_ENDPOINT_URL     = LIARA_ENDPOINT
 AWS_S3_REGION_NAME      = 'us-east-1'
-print("Bucket name: ", LIARA_BUCKET_NAME)
-print("Bucket name: ", AWS_STORAGE_BUCKET_NAME)
 # Django-storages configuration
 STORAGES = {
   "default": {
-      "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+      "BACKEND": "storages.backends.s3.S3Storage",
   },
   "staticfiles": {
-      "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+      "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
   },
 }
 
