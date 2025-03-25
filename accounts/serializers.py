@@ -1,4 +1,6 @@
 from django.contrib.auth.password_validation import validate_password
+from rest_framework.exceptions import ValidationError
+
 from .models import User, Staff, FAQ
 from rest_framework import serializers
 
@@ -19,9 +21,18 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         instance = self.Meta.model(**validated_data)
         if password is not None:
             instance.set_password(password)
+        else:
+            raise serializers.ValidationError("Invalid password.")
         instance.is_active = True
         instance.save()
         return instance
+
+    def validate_password(self, value):
+        try:
+            validate_password(value, self.instance)
+        except ValidationError as e:
+            raise serializers.ValidationError(list(e.messages))
+        return value
 
 class StaffSerializer(serializers.ModelSerializer):
     class Meta:
