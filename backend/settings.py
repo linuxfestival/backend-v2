@@ -175,3 +175,27 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 
 USE_TZ = True
+
+LIARA_ENDPOINT    = os.getenv("BUCKET_ENDPOINT")
+LIARA_BUCKET_NAME = os.getenv("BUCKET_NAME")
+LIARA_ACCESS_KEY  = os.getenv("BUCKET_ACCESS_KEY")
+LIARA_SECRET_KEY  = os.getenv("BUCKET_SECRET_KEY")
+
+# S3 Settings Based on AWS (optional)
+AWS_ACCESS_KEY_ID       = LIARA_ACCESS_KEY
+AWS_SECRET_ACCESS_KEY   = LIARA_SECRET_KEY
+AWS_STORAGE_BUCKET_NAME = LIARA_BUCKET_NAME
+AWS_S3_ENDPOINT_URL     = LIARA_ENDPOINT
+AWS_S3_REGION_NAME      = 'us-east-1'
+
+# Django-storages configuration
+STORAGES = {
+  "default": {
+      "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+  },
+  "staticfiles": {
+      "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+  },
+}
+
+AWS_QUERYSTRING_AUTH = False
