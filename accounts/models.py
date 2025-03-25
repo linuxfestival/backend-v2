@@ -9,6 +9,7 @@ from django.contrib.auth.models import PermissionsMixin, AbstractUser
 
 from django.db import models
 from rest_framework.exceptions import ValidationError
+from tinymce.models import HTMLField
 
 
 def validate_avatar(value):
@@ -123,7 +124,7 @@ class Staff(models.Model):
 
 class FAQ(models.Model):
     question = models.CharField(max_length=255)
-    answer = models.TextField(max_length=1023)
+    answer = HTMLField()
 
     def __str__(self):
         return self.question

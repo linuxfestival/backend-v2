@@ -83,6 +83,7 @@ INSTALLED_APPS = [
     'drf_spectacular',
     'drf_spectacular_sidecar',
     'corsheaders',
+    'tinymce',
 
     # Default: required for admin site
     'django.contrib.admin',
