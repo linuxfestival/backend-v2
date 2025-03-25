@@ -123,7 +123,7 @@ class Staff(models.Model):
 
 class FAQ(models.Model):
     question = models.CharField(max_length=255)
-    answer = models.CharField(max_length=1023)
+    answer = models.TextField(max_length=1023)
 
     def __str__(self):
         return self.question
