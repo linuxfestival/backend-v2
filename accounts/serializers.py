@@ -46,7 +46,7 @@ class FAQSerializer(serializers.ModelSerializer):
 
 
 class ChangePasswordSerializer(serializers.Serializer):
-    old_password = serializers.CharField(required=True, validators=[validate_password])
+    old_password = serializers.CharField(required=True)
     new_password = serializers.CharField(required=True, validators=[validate_password])
 
 
