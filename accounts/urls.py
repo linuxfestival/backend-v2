@@ -12,7 +12,7 @@ router.register('faq', views.FAQViewSet, 'faq')
 
 urlpatterns = [
                   # flush expired tokens on a daily basis.
-                  path('token/', TokenObtainPairView.as_view(), name='token'),
+                  path('token/access/', TokenObtainPairView.as_view(), name='token'),
                   path('token/refresh/', TokenRefreshView.as_view(), name='refresh_token'),
                   path('token/blacklist/', token_blacklist, name='blacklist_token'),
               ] + router.urls
