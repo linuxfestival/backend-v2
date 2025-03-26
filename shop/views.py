@@ -169,9 +169,6 @@ class PaymentViewSet(viewsets.ViewSet):
             payment.save()
 
             participations.update(payment_state="PENDING")
-            if coupon:
-                coupon.count -= 1
-                coupon.save()
 
             return Response({
                 "payment_url": payment.pay_link,
@@ -213,6 +210,9 @@ class PaymentViewSet(viewsets.ViewSet):
             payment.save()
 
             payment.participations.update(payment_state="COMPLETED")
+            if payment.coupon:
+                payment.coupon.count -= 1
+                payment.coupon.save()
 
             return Response({
                 "detail": "Payment verified successfully.",
