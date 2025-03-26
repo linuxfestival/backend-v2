@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Presentation, Participation, Payment, Presenter
+from .models import Presentation, Participation, Payment, Presenter, Coupon
 
 
 class PresenterSerializer(serializers.ModelSerializer):
@@ -42,6 +42,19 @@ class ParticipationSerializer(serializers.ModelSerializer):
     class Meta:
         fields = '__all__'
         model = Participation
+
+class CouponSerializer(serializers.ModelSerializer):
+    is_valid = serializers.BooleanField(default=False)
+    class Meta:
+        fields = ['percentage', 'is_valid']
+        model = Coupon
+
+    def get_is_valid(self, obj):
+        return obj.is_valid()
+
+
+
+
 
 
 class PaymentSerializer(serializers.ModelSerializer):

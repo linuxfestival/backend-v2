@@ -2,7 +2,7 @@ from django.db import transaction
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from drf_yasg.utils import swagger_auto_schema
-from rest_framework import status, viewsets
+from rest_framework import status, viewsets, mixins
 from rest_framework.decorators import action
 from rest_framework.generics import get_object_or_404
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from .models import Presentation, Participation, Payment, Coupon
 from .payments import ZarrinPal
 from .serializers import PresentationSerializer, ParticipationSerializer, PayAllSerializer, PaymentVerifySerializer, \
-    CartSerializer, PaymentListSerializer
+    CartSerializer, PaymentListSerializer, CouponSerializer
 
 
 class PresentationViewSet(viewsets.ViewSet):
@@ -236,3 +236,7 @@ class PaymentViewSet(viewsets.ViewSet):
         payments = Payment.objects.filter(user=request.user)
         serializer = PaymentListSerializer(payments, many=True)
         return Response(serializer.data)
+
+class CouponViewSet(mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    serializer_class = CouponSerializer
+    queryset = Coupon.objects.all()

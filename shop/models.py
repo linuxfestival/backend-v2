@@ -80,7 +80,7 @@ class Participation(models.Model):
 
 class Coupon(models.Model):
     name = models.CharField(max_length=50, primary_key=True, help_text="Don't use / in the name.")
-    count = models.PositiveIntegerField(null=False, blank=False)
+    count = models.PositiveIntegerField()
     percentage = models.IntegerField(default=0.0, help_text='Enter a number between 0 to 100.')
 
     def __str__(self):
@@ -91,6 +91,9 @@ class Coupon(models.Model):
             raise ValidationError("Enter a number between 0 to 100.")
         if self.count < 0:
             raise ValidationError("Coupon count cannot be negative.")
+
+    def is_valid(self):
+        return self.count > 0
 
 
 class Payment(models.Model):
