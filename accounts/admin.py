@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, Staff, FAQ
+from .models import User, Staff, FAQ, Accessory
 
 
 class UserAdmin(admin.ModelAdmin):
@@ -12,6 +12,7 @@ class UserAdmin(admin.ModelAdmin):
 
 admin.site.register(User, UserAdmin)
 admin.site.register(FAQ)
+admin.site.register(Accessory)
 @admin.register(Staff)
 class StaffAdmin(admin.ModelAdmin):
     pass

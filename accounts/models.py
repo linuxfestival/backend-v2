@@ -22,6 +22,13 @@ class PhoneValidator(RegexValidator):
     regex = r'^(\+98|0)?9\d{9}$'
     message = "Phone number must be entered in the format: '+98----------' or '09---------'."
 
+class Accessory(models.Model):
+    name = models.CharField(max_length=255)
+    description = models.CharField(max_length=255)
+    price = models.FloatField()
+
+    def __str__(self):
+        return f"{self.name} - {self.price}T"
 
 class UserManager(BaseUserManager):
     def create_user(self, phone_number, password, first_name, last_name, email, **other_fields):
@@ -74,6 +81,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     otp_code = models.CharField(max_length=64, blank=True, null=True)
     last_otp_sent = models.DateTimeField(blank=True, null=True)
 
+    accessories = models.ManyToManyField(Accessory, "accessories")
 
     objects = UserManager()
     USERNAME_FIELD = 'phone_number'

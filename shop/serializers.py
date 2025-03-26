@@ -19,8 +19,7 @@ class PresentationSerializer(serializers.ModelSerializer):
         model = Presentation
         fields = [
             'service_type', 'capacity', 'start', 'end', 'description', 'title', 'remained_capacity',
-            'id', 'cost', 'presenters', 'is_registration_active', 'presentation_link',
-            'accessories', 'accessories_cost', 'accessories_capacity'
+            'id', 'cost', 'presenters', 'is_registration_active', 'presentation_link'
         ]
         extra_kwargs = {'id': {'read_only': True}, 'presentation_link': {'read_only': True}}
 
@@ -32,7 +31,7 @@ class CartSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Participation
-        fields = ['id', 'presentation', 'payment_state', 'service_type', 'has_accessories']
+        fields = ['id', 'presentation', 'payment_state', 'service_type']
         extra_kwargs = {'service_type': {'read_only': True}, 'payment_state': {'read_only': True}
                         , 'presentation': {'read_only': True}, 'id': {'read_only': True}}
 

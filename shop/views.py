@@ -128,14 +128,8 @@ class PaymentViewSet(viewsets.ViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            if participation.has_accessories and presentation.get_remained_accessories() < 1:
-                return Response(
-                    {'detail': f'Accessories for presentation {presentation.title} are not available.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
         total_price = sum(
-            p.presentation.cost + (p.presentation.accessories_cost if p.has_accessories else 0)
+            p.presentation.cost
             for p in participations
         )
 

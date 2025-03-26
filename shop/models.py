@@ -44,10 +44,6 @@ class Presentation(models.Model):
     presentation_link = models.URLField(blank=True)
     cost = models.FloatField(blank=False)
 
-    accessories = models.CharField(max_length=100, blank=False)
-    accessories_capacity = models.IntegerField(blank=False)
-    accessories_cost = models.FloatField(blank=False)
-
 
     def clean(self):
         if self.cost < 0:
@@ -58,8 +54,6 @@ class Presentation(models.Model):
     def get_remained_capacity(self):
         return self.capacity - Participation.objects.filter(presentation=self, payment_state="COMPLETED").count()
 
-    def get_remained_accessories(self):
-        return self.accessories_capacity - Participation.objects.filter(presentation=self, has_accessories=True).count()
 
     def participations(self):
         return Participation.objects.filter(presentation=self)
@@ -72,7 +66,6 @@ class Participation(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='participations')
     presentation = models.ForeignKey(Presentation, on_delete=models.CASCADE, related_name='participations')
     payment_state = models.CharField(choices=PAYMENT_STATES, default="PENDING", max_length=10)
-    has_accessories = models.BooleanField(default=False)
 
     def __str__(self):
         return f'{self.user.phone_number} - {self.presentation.title}'
