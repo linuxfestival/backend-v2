@@ -143,7 +143,7 @@ class PaymentViewSet(viewsets.ViewSet):
         if coupon_code:
             coupon = Coupon.objects.select_for_update().filter(name=coupon_code, count__gt=0).first()
             if not coupon:
-                return Response({"detail": "Invalid or expired coupon code."},
+                return Response({"detail": "کد تخفیف نامعتبر!"},
                                 status=status.HTTP_400_BAD_REQUEST)
             discount = (coupon.percentage / 100) * total_price
             total_price -= discount
