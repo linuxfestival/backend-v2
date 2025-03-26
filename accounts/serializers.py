@@ -1,5 +1,8 @@
 from django.contrib.auth.password_validation import validate_password
 from rest_framework.exceptions import ValidationError
+from rest_framework.fields import SerializerMethodField
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import User, Staff, FAQ, Accessory
 from rest_framework import serializers
@@ -17,9 +20,10 @@ class UserPublicSerializer(serializers.ModelSerializer):
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
+    tokens = SerializerMethodField(read_only=True)
     class Meta:
         model = User
-        fields = ['first_name', 'last_name', 'email', 'phone_number', 'password']
+        fields = ['first_name', 'last_name', 'email', 'phone_number', 'password', 'tokens']
         extra_kwargs = {'password': {'write_only': True}}
 
     def create(self, validated_data):
@@ -32,6 +36,13 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         instance.is_active = True
         instance.save()
         return instance
+
+    def get_tokens(self, obj):
+        refresh = RefreshToken.for_user(obj)
+        return {
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+        }
 
     def validate_password(self, value):
         try:
