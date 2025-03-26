@@ -8,6 +8,7 @@ from rest_framework.generics import get_object_or_404
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 
+from accounts.models import Accessory
 from .models import Presentation, Participation, Payment, Coupon
 from .payments import ZarrinPal
 from .serializers import PresentationSerializer, ParticipationSerializer, PayAllSerializer, PaymentVerifySerializer, \
@@ -103,6 +104,7 @@ class PaymentViewSet(viewsets.ViewSet):
         serializer = PayAllSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         coupon_code = serializer.validated_data.get('coupon', None)
+        accessory_ids = serializer.validated_data.get('accessories', [])
 
         participations = Participation.objects.select_for_update().filter(user=user, payment_state="PENDING")
         if not participations.exists():
@@ -133,6 +135,9 @@ class PaymentViewSet(viewsets.ViewSet):
             for p in participations
         )
 
+        accessories = Accessory.objects.filter(id__in=accessory_ids)
+        total_price += sum(accessory.price for accessory in accessories)
+
         coupon = None
         if coupon_code:
             coupon = Coupon.objects.select_for_update().filter(name=coupon_code, count__gt=0).first()
@@ -148,6 +153,7 @@ class PaymentViewSet(viewsets.ViewSet):
             coupon=coupon,
         )
         payment.participations.set(participations)
+        payment.accessories.set(accessories)
 
         zarrinpal = ZarrinPal()
         zarrinpal_response = zarrinpal.create_payment(

@@ -7,10 +7,10 @@ from rest_framework.decorators import action
 from rest_framework.permissions import BasePermission
 
 from . import serializers
-from .models import User, Staff, FAQ
+from .models import User, Staff, FAQ, Accessory
 from rest_framework.response import Response
 
-from .serializers import FAQSerializer
+from .serializers import FAQSerializer, AccessorySerializer
 from .sms import SMS_EXECUTOR, send_sms, OTP_VALIDITY_PERIOD, OTP_RESEND_DELAY
 
 
@@ -26,6 +26,7 @@ class IsSamePerson(BasePermission):
         except AttributeError:
             return False
 
+
 class StaffViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     queryset = Staff.objects.all()
     serializer_class = serializers.StaffSerializer
@@ -33,12 +34,10 @@ class StaffViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
 
 class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin,
                   viewsets.GenericViewSet):
-
     queryset = User.objects.all()
     serializer_class = serializers.UserPublicSerializer
     lookup_field = 'phone_number'
     permission_classes = [IsSamePerson]
-
 
     @action(methods=['POST'], detail=False, permission_classes=[IsSamePerson],
             serializer_class=serializers.ChangePasswordSerializer)
@@ -53,7 +52,6 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin,
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-
     @action(methods=['POST'], detail=False, permission_classes=[],
             serializer_class=serializers.UserRegistrationSerializer)
     def signup(self, request):
@@ -63,7 +61,6 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin,
             return Response(serializer.data, status=status.HTTP_201_CREATED)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
     @action(methods=['POST'], detail=False, permission_classes=[],
             serializer_class=serializers.SendVerificationSerializer)
@@ -89,14 +86,12 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin,
             totp = pyotp.TOTP(secret_key, interval=OTP_VALIDITY_PERIOD)
             otp = totp.now()
 
-            mobiles = [user.phone_number,]
+            mobiles = [user.phone_number, ]
             SMS_EXECUTOR.submit(send_sms, mobiles, f"Your verification code is {otp}.")
 
             return Response({"detail": "Verification code sent to your phone."}, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
 
     @action(methods=['POST'], detail=False, permission_classes=[],
             serializer_class=serializers.ActivateUserSerializer)
@@ -126,6 +121,12 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin,
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
 class FAQViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     queryset = FAQ.objects.all()
     serializer_class = FAQSerializer
+
+
+class AccessoryViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    queryset = Accessory.objects.all()
+    serializer_class = AccessorySerializer

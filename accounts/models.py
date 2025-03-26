@@ -25,7 +25,8 @@ class PhoneValidator(RegexValidator):
 class Accessory(models.Model):
     name = models.CharField(max_length=255)
     description = models.CharField(max_length=255)
-    price = models.FloatField()
+    price = models.FloatField(default=10000)
+    img = models.ImageField(default=None)
 
     def __str__(self):
         return f"{self.name} - {self.price}T"

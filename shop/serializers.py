@@ -66,6 +66,9 @@ class PaymentSerializer(serializers.ModelSerializer):
 
 class PayAllSerializer(serializers.ModelSerializer):
     coupon = serializers.CharField(required=False, allow_blank=True)
+    accessories = serializers.ListField(
+        child=serializers.IntegerField(), required=False
+    )
 
     class Meta:
         model = Payment

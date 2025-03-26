@@ -1,14 +1,20 @@
 from django.contrib.auth.password_validation import validate_password
 from rest_framework.exceptions import ValidationError
 
-from .models import User, Staff, FAQ
+from .models import User, Staff, FAQ, Accessory
 from rest_framework import serializers
 
+class AccessorySerializer(serializers.ModelSerializer):
+    class Meta:
+        fields = '__all__'
+        model = Accessory
 
 class UserPublicSerializer(serializers.ModelSerializer):
+    accessories = AccessorySerializer(many=True, read_only=True)
     class Meta:
         model = User
-        fields = ['first_name', 'last_name', 'avatar', 'email']
+        fields = ['first_name', 'last_name', 'avatar', 'email', 'accessories']
+
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     class Meta:
@@ -34,10 +40,12 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(list(e.messages))
         return value
 
+
 class StaffSerializer(serializers.ModelSerializer):
     class Meta:
         model = Staff
         fields = '__all__'
+
 
 class FAQSerializer(serializers.ModelSerializer):
     class Meta:
@@ -75,3 +83,5 @@ class ActivateUserSerializer(serializers.Serializer):
             raise serializers.ValidationError("Invalid phone number.")
 
         return data
+
+

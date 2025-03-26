@@ -9,6 +9,7 @@ router = routers.DefaultRouter()
 router.register('users', views.UserViewSet, 'users')
 router.register('staff', views.StaffViewSet, 'staff')
 router.register('faq', views.FAQViewSet, 'faq')
+router.register('accessory', views.AccessoryViewSet, 'accessory')
 
 urlpatterns = [
                   # flush expired tokens on a daily basis.
