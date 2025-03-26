@@ -72,7 +72,7 @@ class PayAllSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Payment
-        fields = ['coupon']
+        fields = ['coupon', 'accessories']
 
 
 class PaymentVerifySerializer(serializers.Serializer):
