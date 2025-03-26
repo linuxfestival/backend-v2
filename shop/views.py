@@ -183,14 +183,14 @@ class PaymentViewSet(viewsets.ViewSet):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @extend_schema(request=PaymentVerifySerializer, responses={200: 'detail, ref_id, card_pan, amount'})
-    @action(methods=['post'], detail=False, permission_classes=[IsAuthenticated])
+    @action(methods=['post'], detail=False, permission_classes=[])
     @transaction.atomic
     def verify(self, request):
         serializer = PaymentVerifySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         authority = serializer.validated_data['authority']
 
-        payment = get_object_or_404(Payment.objects.select_for_update(), authority=authority, user=request.user)
+        payment = get_object_or_404(Payment.objects.select_for_update(), authority=authority)
 
         if payment.payment_state == "COMPLETED":
             return Response({"detail": "Payment has already been verified."},

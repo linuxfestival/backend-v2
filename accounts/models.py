@@ -82,7 +82,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     otp_code = models.CharField(max_length=64, blank=True, null=True)
     last_otp_sent = models.DateTimeField(blank=True, null=True)
 
-    accessories = models.ManyToManyField(Accessory, "accessories")
+    accessories = models.ManyToManyField(Accessory, "accessories", blank=True)
 
     objects = UserManager()
     USERNAME_FIELD = 'phone_number'
