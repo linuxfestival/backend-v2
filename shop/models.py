@@ -1,6 +1,7 @@
 from django.db import models
 from django.conf import settings
 from rest_framework.exceptions import ValidationError
+from tinymce.models import HTMLField
 
 from accounts.models import Accessory
 
@@ -21,7 +22,7 @@ class Presenter(models.Model):
     last_name = models.CharField(max_length=30, blank=False)
 
     email = models.EmailField(blank=True, null=True)
-    description = models.TextField(blank=True, null=True)
+    description = HTMLField()
     avatar = models.ImageField(null=True, blank=True)
 
     class Meta:
@@ -39,7 +40,7 @@ class Presentation(models.Model):
     start = models.DateTimeField(blank=False)
     end = models.DateTimeField(blank=False)
 
-    description = models.TextField(blank=False)
+    description = HTMLField()
     capacity = models.IntegerField(blank=False)
     is_registration_active = models.BooleanField(default=True)
     presentation_link = models.URLField(blank=True)
