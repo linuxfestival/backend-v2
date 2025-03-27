@@ -31,6 +31,12 @@ class Presenter(models.Model):
     def __str__(self):
         return f'{self.last_name} {self.first_name}'
 
+class PresentationTag(models.Model):
+    name = models.CharField(max_length=63)
+
+    def __str__(self):
+        return self.name
+
 
 class Presentation(models.Model):
     presenters = models.ManyToManyField(Presenter, related_name='presentations')
@@ -45,6 +51,8 @@ class Presentation(models.Model):
     is_registration_active = models.BooleanField(default=True)
     presentation_link = models.URLField(blank=True)
     cost = models.FloatField(blank=False)
+
+    tags = models.ManyToManyField(PresentationTag, "presentation_tag")
 
 
     def clean(self):

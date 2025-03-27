@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Presentation, Participation, Payment, Presenter, Coupon
+from .models import Presentation, Participation, Payment, Presenter, Coupon, PresentationTag
 
 
 class PresenterSerializer(serializers.ModelSerializer):
@@ -7,10 +7,15 @@ class PresenterSerializer(serializers.ModelSerializer):
         model = Presenter
         fields = ['first_name', 'last_name', 'email', 'description', 'avatar']
 
+class PresentationTagSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PresentationTag
+        fields = ['name']
 
 class PresentationSerializer(serializers.ModelSerializer):
     remained_capacity = serializers.SerializerMethodField()
     presenters = PresenterSerializer(many=True)
+    tags = PresentationTagSerializer(many=True, read_only=True)
 
     def get_remained_capacity(self, obj):
         return obj.get_remained_capacity()
@@ -19,7 +24,7 @@ class PresentationSerializer(serializers.ModelSerializer):
         model = Presentation
         fields = [
             'service_type', 'capacity', 'start', 'end', 'description', 'title', 'remained_capacity',
-            'id', 'cost', 'presenters', 'is_registration_active', 'presentation_link'
+            'id', 'cost', 'presenters', 'is_registration_active', 'presentation_link', 'tags'
         ]
         extra_kwargs = {'id': {'read_only': True}, 'presentation_link': {'read_only': True}}
 
