@@ -4,7 +4,7 @@ from drf_spectacular.utils import extend_schema
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status, viewsets, mixins
 from rest_framework.decorators import action
-from rest_framework.generics import get_object_or_404
+from rest_framework.generics import get_object_or_404, RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 
@@ -15,7 +15,10 @@ from .serializers import PresentationSerializer, ParticipationSerializer, PayAll
     CartSerializer, PaymentListSerializer, CouponSerializer
 
 
-class PresentationViewSet(viewsets.ViewSet):
+class PresentationViewSet(RetrieveAPIView, viewsets.ViewSet):
+    queryset = Presentation.objects.all()
+    serializer_class = PresentationSerializer
+
     @extend_schema(responses={200: PresentationSerializer(many=True)})
     @action(detail=False, methods=['get'], permission_classes=[AllowAny], )
     def all(self, request):
