@@ -25,6 +25,8 @@ class Presenter(models.Model):
     description = HTMLField()
     avatar = models.ImageField(null=True, blank=True)
 
+    linkedin = models.URLField(blank=True)
+
     class Meta:
         unique_together = ('first_name', 'last_name')
 
