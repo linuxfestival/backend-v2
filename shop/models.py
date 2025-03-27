@@ -54,7 +54,7 @@ class Presentation(models.Model):
     presentation_link = models.URLField(blank=True)
     cost = models.FloatField(blank=False)
 
-    tags = models.ManyToManyField(PresentationTag, "presentation_tag")
+    tags = models.ManyToManyField(PresentationTag, "presentation_tag", blank=True)
 
 
     def clean(self):

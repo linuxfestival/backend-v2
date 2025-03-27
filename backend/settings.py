@@ -176,25 +176,34 @@ USE_I18N = True
 
 USE_TZ = True
 
-LIARA_ENDPOINT    = os.getenv("BUCKET_ENDPOINT", default="BUCKET_ENDPOINT_DEFAULT")
+LIARA_ENDPOINT = os.getenv("BUCKET_ENDPOINT", default="BUCKET_ENDPOINT_DEFAULT")
 LIARA_BUCKET_NAME = os.getenv("BUCKET_NAME", default="BUCKET_NAME_DEFAULT")
-LIARA_ACCESS_KEY  = os.getenv("BUCKET_ACCESS_KEY", default="BUCKET_ACCESS_KEY_DEFAULT")
-LIARA_SECRET_KEY  = os.getenv("BUCKET_SECRET_KEY", default="BUCKET_SECRET_KEY_DEFAULT")
+LIARA_ACCESS_KEY = os.getenv("BUCKET_ACCESS_KEY", default="BUCKET_ACCESS_KEY_DEFAULT")
+LIARA_SECRET_KEY = os.getenv("BUCKET_SECRET_KEY", default="BUCKET_SECRET_KEY_DEFAULT")
 
 # S3 Settings Based on AWS (optional)
-AWS_ACCESS_KEY_ID       = LIARA_ACCESS_KEY
-AWS_SECRET_ACCESS_KEY   = LIARA_SECRET_KEY
+AWS_ACCESS_KEY_ID = LIARA_ACCESS_KEY
+AWS_SECRET_ACCESS_KEY = LIARA_SECRET_KEY
 AWS_STORAGE_BUCKET_NAME = LIARA_BUCKET_NAME
-AWS_S3_ENDPOINT_URL     = LIARA_ENDPOINT
-AWS_S3_REGION_NAME      = 'us-east-1'
+AWS_S3_ENDPOINT_URL = LIARA_ENDPOINT
+AWS_S3_REGION_NAME = 'us-east-1'
 # Django-storages configuration
 STORAGES = {
-  "default": {
-      "BACKEND": "storages.backends.s3.S3Storage",
-  },
-  "staticfiles": {
-      "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
-  },
+    "default": {
+        "BACKEND": "storages.backends.s3.S3Storage",
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
 }
 
 AWS_QUERYSTRING_AUTH = False
+
+TINYMCE_DEFAULT_CONFIG = {
+    "height": 500,
+    "menubar": "edit view insert format tools table",
+    "plugins": "textcolor colorpicker",
+    "toolbar": "undo redo | bold italic underline | forecolor backcolor | alignleft aligncenter alignright alignjustify",
+    "skin": "oxide-dark",
+    "content_css": "dark",
+}
