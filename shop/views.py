@@ -9,10 +9,10 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 
 from accounts.models import Accessory
-from .models import Presentation, Participation, Payment, Coupon
+from .models import Presentation, Participation, Payment, Coupon, Presenter
 from .payments import ZarrinPal
 from .serializers import PresentationSerializer, ParticipationSerializer, PayAllSerializer, PaymentVerifySerializer, \
-    CartSerializer, PaymentListSerializer, CouponSerializer
+    CartSerializer, PaymentListSerializer, CouponSerializer, PresenterSerializer
 
 
 class PresentationViewSet(RetrieveAPIView, viewsets.ViewSet):
@@ -97,6 +97,10 @@ class PresentationViewSet(RetrieveAPIView, viewsets.ViewSet):
 
         return Response({'detail': 'Participation removed successfully.'}, status=status.HTTP_200_OK)
 
+
+class PresenterViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    queryset = Presenter.objects.all()
+    serializer_class = PresenterSerializer
 
 class PaymentViewSet(viewsets.ViewSet):
     @extend_schema(request=PayAllSerializer, responses={200: 'payment_url, authority'})
@@ -216,6 +220,9 @@ class PaymentViewSet(viewsets.ViewSet):
             if payment.coupon:
                 payment.coupon.count -= 1
                 payment.coupon.save()
+
+            for accessory in payment.accessories.all():
+                payment.user.accessories.add(accessory)
 
             return Response({
                 "detail": "Payment verified successfully.",
