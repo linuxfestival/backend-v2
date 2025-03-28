@@ -1,3 +1,4 @@
+from colorfield.fields import ColorField
 from django.db import models
 from django.conf import settings
 from rest_framework.exceptions import ValidationError
@@ -35,6 +36,7 @@ class Presenter(models.Model):
 
 class PresentationTag(models.Model):
     name = models.CharField(max_length=63)
+    color = ColorField(default="#FA175C")
 
     def __str__(self):
         return self.name

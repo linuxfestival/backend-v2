@@ -5,12 +5,12 @@ from .models import Presentation, Participation, Payment, Presenter, Coupon, Pre
 class PresenterSerializer(serializers.ModelSerializer):
     class Meta:
         model = Presenter
-        fields = ['first_name', 'last_name', 'email', 'description', 'avatar']
+        fields = ['first_name', 'last_name', 'email', 'description', 'avatar', 'linkedin']
 
 class PresentationTagSerializer(serializers.ModelSerializer):
     class Meta:
         model = PresentationTag
-        fields = ['name']
+        fields = ['name', 'color']
 
 class PresentationSerializer(serializers.ModelSerializer):
     remained_capacity = serializers.SerializerMethodField()

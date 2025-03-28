@@ -84,6 +84,7 @@ INSTALLED_APPS = [
     'drf_spectacular_sidecar',
     'corsheaders',
     'tinymce',
+    'colorfield',
 
     # Default: required for admin site
     'django.contrib.admin',
