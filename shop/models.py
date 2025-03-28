@@ -15,6 +15,7 @@ PAYMENT_STATES = [
 SERVICE_TYPE = [
     ('WORKSHOP', 'WORKSHOP'),
     ('TALK', 'TALK'),
+    ('PACKAGE', 'PACKAGE'),
 ]
 
 
