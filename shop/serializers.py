@@ -24,7 +24,7 @@ class PresentationSerializer(serializers.ModelSerializer):
         model = Presentation
         fields = [
             'service_type', 'capacity', 'start', 'end', 'description', 'title', 'remained_capacity',
-            'id', 'cost', 'presenters', 'is_registration_active', 'presentation_link', 'tags'
+            'id', 'cost', 'presenters', 'is_registration_active', 'presentation_link', 'tags', 'morkopoloyor'
         ]
         extra_kwargs = {'id': {'read_only': True}, 'presentation_link': {'read_only': True}}
 
