@@ -57,6 +57,8 @@ class Presentation(models.Model):
     presentation_link = models.URLField(blank=True)
     cost = models.FloatField(blank=False)
 
+    morkopoloyor = models.URLField(blank=True)
+
     tags = models.ManyToManyField(PresentationTag, "presentation_tag", blank=True)
 
 
