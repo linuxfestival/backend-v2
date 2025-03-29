@@ -87,7 +87,7 @@ class Participation(models.Model):
     payment_state = models.CharField(choices=PAYMENT_STATES, default="PENDING", max_length=10)
 
     def __str__(self):
-        return f'{self.user.phone_number} - {self.presentation.title}'
+        return f'{self.user.phone_number} - {self.presentation.en_title}'
 
 
 class Coupon(models.Model):
