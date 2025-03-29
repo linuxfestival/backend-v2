@@ -31,7 +31,7 @@ class PresentationAdmin(admin.ModelAdmin):
             }
 
             message_text = (
-                f"Dear User, this is a friendly reminder to join us for the upcoming presentation '{presentation.title}'. "
+                f"Dear User, this is a friendly reminder to join us for the upcoming presentation '{presentation.en_title}'. "
                 f"We look forward to your participation! Date: {presentation.start}"
             )
 
@@ -44,10 +44,10 @@ class PresentationAdmin(admin.ModelAdmin):
         data = {}
 
         for presentation in queryset:
-            data[presentation.title] = {}
+            data[presentation.en_title] = {}
             for participation in Participation.objects.filter(payment_state="COMPLETED"):
                 user = participation.user
-                data[presentation.title][user.phone_number] = {
+                data[presentation.en_title][user.phone_number] = {
                     'name': user.first_name + " " + user.last_name,
                     'email': user.email,
                 }

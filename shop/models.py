@@ -47,11 +47,13 @@ class Presentation(models.Model):
     presenters = models.ManyToManyField(Presenter, related_name='presentations')
     service_type = models.CharField(choices=SERVICE_TYPE, blank=False, max_length=30)
 
-    title = models.CharField(max_length=100)
+    en_title = models.CharField(max_length=100)
+    fa_title = models.CharField(max_length=100)
     start = models.DateTimeField(blank=False)
     end = models.DateTimeField(blank=False)
 
-    description = HTMLField()
+    en_description = HTMLField()
+    fa_description = HTMLField()
     capacity = models.IntegerField(blank=False)
     is_registration_active = models.BooleanField(default=True)
     presentation_link = models.URLField(blank=True)
@@ -76,7 +78,7 @@ class Presentation(models.Model):
         return Participation.objects.filter(presentation=self)
 
     def __str__(self):
-        return self.title
+        return self.en_title
 
 
 class Participation(models.Model):

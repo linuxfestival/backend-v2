@@ -52,13 +52,13 @@ class PresentationViewSet(RetrieveAPIView, viewsets.ViewSet):
 
         if presentation.get_remained_capacity() < 1:
             return Response(
-                {'detail': f'No remaining capacity for presentation {presentation.title}.'},
+                {'detail': f'No remaining capacity for presentation {presentation.en_title}.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         if presentation.start <= timezone.now():
             return Response(
-                {'detail': f'Presentation {presentation.title} has already started.'},
+                {'detail': f'Presentation {presentation.en_title} has already started.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -83,13 +83,13 @@ class PresentationViewSet(RetrieveAPIView, viewsets.ViewSet):
         presentation = participation.presentation
         if presentation.start <= timezone.now():
             return Response(
-                {'detail': f'Cannot remove participation; presentation {presentation.title} has already started.'},
+                {'detail': f'Cannot remove participation; presentation {presentation.en_title} has already started.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         if participation.payment_state == "COMPLETED":
             return Response(
-                {'detail': f'Cannot remove participation; presentation {presentation.title} has already completed.'},
+                {'detail': f'Cannot remove participation; presentation {presentation.en_title} has already completed.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -123,7 +123,7 @@ class PaymentViewSet(viewsets.ViewSet):
 
             if presentation.start <= timezone.now():
                 return Response(
-                    {'detail': f'Presentation {presentation.title} has already started.'},
+                    {'detail': f'Presentation {presentation.en_title} has already started.'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
@@ -133,7 +133,7 @@ class PaymentViewSet(viewsets.ViewSet):
 
             if presentation.get_remained_capacity() < 1:
                 return Response(
-                    {'detail': f'No remaining capacity for presentation {presentation.title}.'},
+                    {'detail': f'No remaining capacity for presentation {presentation.en_title}.'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
