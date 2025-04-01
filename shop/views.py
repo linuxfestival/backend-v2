@@ -141,8 +141,14 @@ class PaymentViewSet(viewsets.ViewSet):
             p.presentation.cost
             for p in participations
         )
-
         accessories = Accessory.objects.filter(id__in=accessory_ids)
+
+        if total_price == 0:
+            for accessory in accessories.all():
+                user.accessories.add(accessory)
+            participations.update(payment_state="COMPLETED")
+            return Response(None, status=status.HTTP_204_NO_CONTENT)
+
         total_price += sum(accessory.price for accessory in accessories)
 
         coupon = None

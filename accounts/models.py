@@ -31,6 +31,9 @@ class Accessory(models.Model):
     def __str__(self):
         return f"{self.name} - {self.price}T"
 
+    def get_bought_count(self):
+        return self.user_set.count()
+
 class UserManager(BaseUserManager):
     def create_user(self, phone_number, password, first_name, last_name, email, **other_fields):
         if not email:
@@ -127,6 +130,8 @@ class Staff(models.Model):
     quote = models.TextField()
     role = models.CharField(max_length=10, choices=ROLE_CHOICES)
     team = models.CharField(max_length=15, choices=TEAM_CHOICES)
+
+    linkedin = models.URLField(blank=True)
 
     def __str__(self):
         return f"{self.name} - {self.get_team_display()} ({self.get_role_display()})"
