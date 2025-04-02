@@ -7,9 +7,15 @@ from shop.models import Presenter, Presentation, Participation, Coupon, Payment,
 
 admin.site.register(Presenter)
 admin.site.register(Participation)
-admin.site.register(Coupon)
 admin.site.register(Payment)
 admin.site.register(PresentationTag)
+
+@admin.register(Coupon)
+class CouponAdmin(admin.ModelAdmin):
+    list_display = ('name', 'used')
+
+    def used(self, obj):
+        return Payment.objects.filter(payment_state="COMPLETED",coupon=obj).count()
 
 @admin.register(Presentation)
 class PresentationAdmin(admin.ModelAdmin):
