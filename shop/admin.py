@@ -9,25 +9,33 @@ admin.site.register(Presenter)
 admin.site.register(Payment)
 admin.site.register(PresentationTag)
 
+
 @admin.register(Participation)
 class ParticipationAdmin(admin.ModelAdmin):
     search_fields = ['user__phone_number']
+
 
 @admin.register(Coupon)
 class CouponAdmin(admin.ModelAdmin):
     list_display = ('name', 'used')
 
     def used(self, obj):
-        return Payment.objects.filter(payment_state="COMPLETED",coupon=obj).count()
+        return Payment.objects.filter(payment_state="COMPLETED", coupon=obj).count()
+
 
 @admin.register(Presentation)
 class PresentationAdmin(admin.ModelAdmin):
-    list_display = ('__str__', 'capacity', 'get_remained_capacity', 'start')
+    list_display = ('__str__', 'capacity', 'get_remained_capacity', 'get_presenters')
     actions = ('send_registration_sms', 'export_registrations')
 
     class Meta:
         model = Presentation
         fields = '__all__'
+
+    def get_presenters(self, obj):
+        return ", ".join([str(presenter) for presenter in obj.presenters.all()])
+
+    get_presenters.short_description = 'Presenters'
 
     @admin.action(description='Send registration sms')
     def send_registration_sms(self, request, obj):
@@ -47,7 +55,6 @@ class PresentationAdmin(admin.ModelAdmin):
             if mobiles:
                 SMS_EXECUTOR.submit(send_sms, list(mobiles), message_text)
 
-
     @admin.action(description='Export registrations')
     def export_registrations(self, request, queryset):
         data = {}
@@ -62,4 +69,3 @@ class PresentationAdmin(admin.ModelAdmin):
                 }
 
         return JsonResponse(data)
-
