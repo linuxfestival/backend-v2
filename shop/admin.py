@@ -13,6 +13,7 @@ admin.site.register(PresentationTag)
 @admin.register(Participation)
 class ParticipationAdmin(admin.ModelAdmin):
     search_fields = ['user__phone_number']
+    list_display = ['__str__','payment_state', 'presentation__cost']
 
 
 @admin.register(Coupon)
