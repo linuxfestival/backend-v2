@@ -142,6 +142,7 @@ class PaymentViewSet(viewsets.ViewSet):
             for p in participations
         )
         accessories = Accessory.objects.filter(id__in=accessory_ids)
+        # TODO: Check for inactive accessories and return if any isn't active
 
         if total_price == 0:
             for accessory in accessories.all():
