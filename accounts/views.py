@@ -52,6 +52,16 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin,
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(methods=['POST'], detail=False, permission_classes=[IsSamePerson],
+            serializer_class=None)
+    def competition_signup(self, request):
+        user = request.user
+        if user.is_signed_up_for_competition:
+            return Response({"detail": "User's already registered for the upcoming competition", "suggestion": "kys"}, status=status.HTTP_400_BAD_REQUEST)
+        user.is_signed_up_for_competition = True
+        user.save()
+        return Response({"detail": "Donezo"})
+
     @action(methods=['POST'], detail=False, permission_classes=[],
             serializer_class=serializers.UserRegistrationSerializer)
     def signup(self, request):

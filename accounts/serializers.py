@@ -16,7 +16,7 @@ class UserPublicSerializer(serializers.ModelSerializer):
     accessories = AccessorySerializer(many=True, read_only=True)
     class Meta:
         model = User
-        fields = ['first_name', 'last_name', 'avatar', 'email', 'accessories']
+        fields = ['first_name', 'last_name', 'avatar', 'email', 'accessories', 'is_signed_up_for_competition']
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
