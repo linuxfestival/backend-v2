@@ -46,13 +46,14 @@ class PresentationAdmin(admin.ModelAdmin):
             mobiles = {
                 str(participation.user.phone_number)
                 for participation in Participation.objects.filter(
-                    payment_state="COMPLETED",
+                    payment_state="COMPLETED", presentation=presentation
                 )
             }
 
             message_text = (
-                f"Dear User, this is a friendly reminder to join us for the upcoming presentation '{presentation.en_title}'. "
-                f"We look forward to your participation! Date: {presentation.start}"
+                f"سلام دوست عزیز! 😊 یه یادآوری دوستانه برات داریم برای شرکت در جلسه ارائه {presentation.en_title}. "
+                f"تاریخ: {presentation.start} "
+                f"Linux Fest 🐧✨"
             )
 
             if mobiles:
