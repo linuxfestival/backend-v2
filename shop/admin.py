@@ -64,7 +64,7 @@ class PresentationAdmin(admin.ModelAdmin):
 
         for presentation in queryset:
             data[presentation.en_title] = {}
-            for participation in Participation.objects.filter(payment_state="COMPLETED"):
+            for participation in Participation.objects.filter(payment_state="COMPLETED", presentation=presentation):
                 user = participation.user
                 data[presentation.en_title][user.phone_number] = {
                     'name': user.first_name + " " + user.last_name,
