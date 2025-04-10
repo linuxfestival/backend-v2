@@ -1,12 +1,15 @@
 from django.contrib import admin
 from django.http import JsonResponse
-from django.template.defaultfilters import title
-
+import time
 from accounts.sms import SMS_EXECUTOR, send_sms
 from shop.models import Presenter, Presentation, Participation, Coupon, Payment, PresentationTag
 
 admin.site.register(Presenter)
 admin.site.register(PresentationTag)
+
+def chunk_list(lst, chunk_size):
+    for i in range(0, len(lst), chunk_size):
+        yield lst[i:i + chunk_size]
 
 @admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):
@@ -57,7 +60,10 @@ class PresentationAdmin(admin.ModelAdmin):
             )
 
             if mobiles:
-                SMS_EXECUTOR.submit(send_sms, list(mobiles), message_text)
+                mobiles_list = list(mobiles)
+                for chunk in chunk_list(mobiles_list, 90):
+                    SMS_EXECUTOR.submit(send_sms, chunk, message_text)
+                    time.sleep(10)
 
     @admin.action(description='Export registrations')
     def export_registrations(self, request, queryset):

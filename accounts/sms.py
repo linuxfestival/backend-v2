@@ -5,9 +5,12 @@ from django.conf import settings
 from concurrent.futures import ThreadPoolExecutor
 
 
-SMS_EXECUTOR = ThreadPoolExecutor(max_workers=10)
+SMS_EXECUTOR = ThreadPoolExecutor(max_workers=2)
 API_KEY = settings.SMS_KEY
 LINE_NUMBER = settings.SMS_LINE_NUMBER
+
+OTP_VALIDITY_PERIOD = 120
+OTP_RESEND_DELAY = 60
 
 def send_sms(mobiles, message_text):
     payload = json.dumps({

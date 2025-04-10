@@ -96,3 +96,10 @@ class ActivateUserSerializer(serializers.Serializer):
         return data
 
 
+class ForgotPasswordSerializer(serializers.Serializer):
+    phone_number = serializers.CharField(max_length=15)
+
+    def validate_phone_number(self, value):
+        if not value:
+            raise serializers.ValidationError("Phone number is required.")
+        return value

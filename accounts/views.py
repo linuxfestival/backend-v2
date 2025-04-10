@@ -1,3 +1,5 @@
+import secrets
+
 import pyotp
 from django.utils.timezone import now
 
@@ -128,6 +130,29 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin,
             user.save()
 
             return Response({"detail": "Phone number verified successfully."}, status=status.HTTP_200_OK)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(methods=['POST'], detail=False, permission_classes=[],
+            serializer_class=serializers.ForgotPasswordSerializer)
+    def forgot_password(self, request):
+        serializer = serializers.ForgotPasswordSerializer(data=request.data)
+        if serializer.is_valid():
+            phone_number = serializer.validated_data['phone_number']
+            try:
+                user = User.objects.get(phone_number=phone_number)
+            except User.DoesNotExist:
+                return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
+            new_password = secrets.token_urlsafe(8)
+            user.set_password(new_password)
+            user.save()
+
+            message_text = f"رمز عبور جدید شما: {new_password}. لطفاً پس از ورود، آن را تغییر دهید."
+            SMS_EXECUTOR.submit(send_sms, [user.phone_number], message_text)
+
+            return Response({"detail": "password change"},
+                            status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
