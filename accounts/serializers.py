@@ -18,6 +18,10 @@ class UserPublicSerializer(serializers.ModelSerializer):
         model = User
         fields = ['first_name', 'last_name', 'avatar', 'email', 'accessories', 'is_signed_up_for_competition']
 
+class ResetPasswordByAdminSerializer(serializers.Serializer):
+    phone_number = serializers.CharField()
+
+
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     tokens = SerializerMethodField(read_only=True)
