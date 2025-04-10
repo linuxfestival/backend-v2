@@ -1,7 +1,9 @@
+import asyncio
+
 from django.contrib import admin
 from django.http import JsonResponse
 import time
-from accounts.sms import SMS_EXECUTOR, send_sms
+from accounts.sms import send_sms
 from shop.models import Presenter, Presentation, Participation, Coupon, Payment, PresentationTag
 
 admin.site.register(Presenter)
@@ -54,16 +56,18 @@ class PresentationAdmin(admin.ModelAdmin):
             }
 
             message_text = (
-                f"سلام دوست عزیز! 😊 یه یادآوری دوستانه برات داریم برای شرکت در جلسه ارائه {presentation.en_title}. "
-                f"تاریخ: {presentation.start} "
-                f"Linux Fest 🐧✨"
+                f"""سلام دوست عزیز! 😊 یه یادآوری دوستانه برات داریم برای شرکت در جلسه ارائه {presentation.en_title}. "
+                تاریخ:{presentation.start}
+                Linux Fest 🐧✨"""
             )
 
             if mobiles:
                 mobiles_list = list(mobiles)
                 for chunk in chunk_list(mobiles_list, 90):
-                    SMS_EXECUTOR.submit(send_sms, chunk, message_text)
+                    asyncio.run(send_sms(chunk, str(message_text)))
                     time.sleep(10)
+
+            return JsonResponse({"message": "SMS tried, check logs."})
 
     @admin.action(description='Export registrations')
     def export_registrations(self, request, queryset):

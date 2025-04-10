@@ -1,22 +1,20 @@
-import secrets
+import asyncio
 import string
-
 import secrets
-
 import pyotp
 from django.utils.timezone import now
 
 from django.contrib.auth.models import AnonymousUser
 from rest_framework import viewsets, mixins, status
 from rest_framework.decorators import action
-from rest_framework.permissions import BasePermission, IsAdminUser
+from rest_framework.permissions import BasePermission, IsAdminUser, AllowAny
 
 from . import serializers
 from .models import User, Staff, FAQ, Accessory
 from rest_framework.response import Response
 
 from .serializers import FAQSerializer, AccessorySerializer, ResetPasswordByAdminSerializer
-from .sms import SMS_EXECUTOR, send_sms, OTP_VALIDITY_PERIOD, OTP_RESEND_DELAY
+from .sms import send_sms, OTP_VALIDITY_PERIOD, OTP_RESEND_DELAY
 
 
 class IsSamePerson(BasePermission):
@@ -74,9 +72,8 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin,
         user.save()
 
         return Response({
-            'detail': 'Password has been reset.',
-            'new_password': new_password
-        }, status=status.HTTP_200_OK)
+            'detail': 'Password has been reset.'
+        }, status=status.HTTP_204_NO_CONTENT)
 
 
     @action(methods=['POST'], detail=False, permission_classes=[IsSamePerson],
@@ -124,7 +121,7 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin,
             otp = totp.now()
 
             mobiles = [user.phone_number, ]
-            SMS_EXECUTOR.submit(send_sms, mobiles, f"Your verification code is {otp}.")
+            asyncio.run(send_sms(mobiles, f" کد تایید لینوکس فست{otp}"))
 
             return Response({"detail": "Verification code sent to your phone."}, status=status.HTTP_200_OK)
 
@@ -158,7 +155,7 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin,
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(methods=['POST'], detail=False, permission_classes=[],
+    @action(methods=['POST'], detail=False, permission_classes=[AllowAny],
             serializer_class=serializers.ForgotPasswordSerializer)
     def forgot_password(self, request):
         serializer = serializers.ForgotPasswordSerializer(data=request.data)
@@ -174,7 +171,7 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin,
             user.save()
 
             message_text = f"رمز عبور جدید شما: {new_password}. لطفاً پس از ورود، آن را تغییر دهید."
-            SMS_EXECUTOR.submit(send_sms, [user.phone_number], message_text)
+            asyncio.run(send_sms([user.phone_number], message_text))
 
             return Response({"detail": "password change"},
                             status=status.HTTP_200_OK)

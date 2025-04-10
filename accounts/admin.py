@@ -1,5 +1,5 @@
-from django.contrib import admin
 from .models import User, Staff, FAQ, Accessory
+from django.contrib import admin
 
 
 class UserAdmin(admin.ModelAdmin):
@@ -14,6 +14,16 @@ class UserAdmin(admin.ModelAdmin):
         return f"(count: {len(thing)}) {', '.join(thing)}"
 
     participation_presentations.short_description = "Participations"
+
+    @admin.action(description='Update passwords to @{user.email[:4]}Aa')
+    def update_password(self, request, queryset):
+        for user in queryset:
+            new_password = f"@{user.email[:4]}Aa"
+            user.set_password(new_password)
+            user.save()
+
+    actions = ['update_password']
+
 
 admin.site.register(User, UserAdmin)
 admin.site.register(FAQ)
