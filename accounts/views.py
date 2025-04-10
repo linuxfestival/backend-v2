@@ -1,9 +1,9 @@
 import asyncio
 import string
-import secrets
 import pyotp
 from django.utils.timezone import now
-
+import secrets
+from tasks.email import send_async_email
 from django.contrib.auth.models import AnonymousUser
 from rest_framework import viewsets, mixins, status
 from rest_framework.decorators import action
@@ -14,7 +14,7 @@ from .models import User, Staff, FAQ, Accessory
 from rest_framework.response import Response
 
 from .serializers import FAQSerializer, AccessorySerializer, ResetPasswordByAdminSerializer
-from .sms import send_sms, OTP_VALIDITY_PERIOD, OTP_RESEND_DELAY
+from tasks.sms import send_sms, OTP_VALIDITY_PERIOD, OTP_RESEND_DELAY
 
 
 class IsSamePerson(BasePermission):
@@ -160,23 +160,33 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin,
     def forgot_password(self, request):
         serializer = serializers.ForgotPasswordSerializer(data=request.data)
         if serializer.is_valid():
-            phone_number = serializer.validated_data['phone_number']
+            email = serializer.validated_data['email']
+
             try:
-                user = User.objects.get(phone_number=phone_number)
+                user = User.objects.get(email=email)
             except User.DoesNotExist:
-                return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+                return Response({"detail": "User with this email not found."}, status=status.HTTP_404_NOT_FOUND)
 
             new_password = secrets.token_urlsafe(8)
             user.set_password(new_password)
             user.save()
 
-            message_text = f"رمز عبور جدید شما: {new_password}. لطفاً پس از ورود، آن را تغییر دهید."
-            asyncio.run(send_sms([user.phone_number], message_text))
+            email_subject = "بازنشانی رمز عبور"
+            message_text = f"""
+                        رمز عبور جدید لینوکس فست: {new_password}
+                        .کاربر گرامی، وارد حساب کاربری خود شوید و آن را تغییر دهید
+                        """
 
-            return Response({"detail": "password change"},
+            try:
+                asyncio.run(send_async_email(email_subject, message_text, [user.email]))
+            except Exception as e:
+                return Response({"detail": f"Error sending email: {str(e)}"},
+                                status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            return Response({"detail": "Password reset successfully. An email has been sent."},
                             status=status.HTTP_200_OK)
-
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class FAQViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):

@@ -51,6 +51,16 @@ SMS_LINE_NUMBER = os.getenv("SMS_LINE_NUMBER", default="300")
 PAYMENT_API_KEY = os.getenv("PAYMENT_API_KEY", default="auth")
 PAYMENT_CALLBACK_URL = os.getenv("PAYMENT_CALLBACK_URL", default="callback")
 
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", default="<EMAIL>")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", default="password")
+
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.AllowAny',

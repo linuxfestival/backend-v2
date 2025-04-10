@@ -10,7 +10,7 @@ from rest_framework.response import Response
 
 from accounts.models import Accessory
 from .models import Presentation, Participation, Payment, Coupon, Presenter
-from .payments import ZarrinPal
+from tasks.payments import ZarrinPal
 from .serializers import PresentationSerializer, ParticipationSerializer, PayAllSerializer, PaymentVerifySerializer, \
     CartSerializer, PaymentListSerializer, CouponSerializer, PresenterSerializer
 

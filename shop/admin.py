@@ -3,7 +3,7 @@ import asyncio
 from django.contrib import admin
 from django.http import JsonResponse
 import time
-from accounts.sms import send_sms
+from tasks.sms import send_sms
 from shop.models import Presenter, Presentation, Participation, Coupon, Payment, PresentationTag
 
 admin.site.register(Presenter)

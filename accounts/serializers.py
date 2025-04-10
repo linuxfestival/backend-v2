@@ -100,7 +100,7 @@ class ActivateUserSerializer(serializers.Serializer):
 
 
 class ForgotPasswordSerializer(serializers.Serializer):
-    phone_number = serializers.CharField(max_length=15)
+    email = serializers.CharField(max_length=200)
 
     def validate_phone_number(self, value):
         if not value:
