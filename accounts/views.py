@@ -9,6 +9,8 @@ from rest_framework import viewsets, mixins, status
 from rest_framework.decorators import action
 from rest_framework.permissions import BasePermission, IsAdminUser
 
+from shop.models import Payment
+from shop.payments import ZarrinPal
 from . import serializers
 from .models import User, Staff, FAQ, Accessory
 from rest_framework.response import Response
@@ -82,10 +84,48 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin,
     def competition_signup(self, request):
         user = request.user
         if user.is_signed_up_for_competition:
-            return Response({"detail": "User's already registered for the upcoming competition", "suggestion": "kys"}, status=status.HTTP_400_BAD_REQUEST)
-        user.is_signed_up_for_competition = True
-        user.save()
-        return Response({"detail": "Donezo"})
+            return Response({"detail": "User's already registered for the upcoming competition", "suggestion": "kys"},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # TODO: Move this shit to db
+        if User.objects.filter(is_signed_up_for_competition=True).count() == 50:
+            return Response({"detail": "Fuck off we're full"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # TODO: Duplicated code
+        zarrinpal = ZarrinPal()
+
+        # TODO: Move total price to env variables or even better, admin panel
+        # Also TODO: Don't be lazy
+        price = 50_000
+        zarrinpal_response = zarrinpal.create_payment(
+            amount=price,
+            mobile=user.phone_number,
+            email=user.email
+        )
+
+        payment = Payment.objects.create(
+            user=user,
+            total_price=price,
+            is_competition_payment=True
+        )
+
+        if zarrinpal_response['status'] == 'success':
+            authority = zarrinpal_response['authority']
+            payment.authority = authority
+            payment.pay_link = zarrinpal_response['link']
+            payment.save()
+
+            return Response({
+                "payment_url": payment.pay_link,
+                "authority": authority
+            }, status=status.HTTP_200_OK)
+        else:
+            payment.payment_state = "FAILED"
+            payment.save()
+            return Response({
+                "detail": "Payment initiation failed.",
+                "error": zarrinpal_response.get('error')
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(methods=['POST'], detail=False, permission_classes=[],
             serializer_class=serializers.UserRegistrationSerializer)

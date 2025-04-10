@@ -223,13 +223,16 @@ class PaymentViewSet(viewsets.ViewSet):
             payment.verified_date = timezone.now()
             payment.save()
 
-            payment.participations.update(payment_state="COMPLETED")
-            if payment.coupon:
-                payment.coupon.count -= 1
-                payment.coupon.save()
+            if payment.is_competition_payment:
+                payment.user.is_signed_up_for_competition = True
+            else:
+                payment.participations.update(payment_state="COMPLETED")
+                if payment.coupon:
+                    payment.coupon.count -= 1
+                    payment.coupon.save()
 
-            for accessory in payment.accessories.all():
-                payment.user.accessories.add(accessory)
+                for accessory in payment.accessories.all():
+                    payment.user.accessories.add(accessory)
 
             return Response({
                 "detail": "Payment verified successfully.",

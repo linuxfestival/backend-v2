@@ -123,6 +123,7 @@ class Payment(models.Model):
     verified_date = models.DateTimeField(null=True, blank=True)
     coupon = models.ForeignKey(Coupon, on_delete=models.SET_NULL, default=None, null=True, blank=True)
     accessories = models.ManyToManyField(Accessory, "payment_accessories")
+    is_competition_payment = models.BooleanField(default=False)
 
     def __str__(self):
         return f'Payment {self.pk} - {self.user.phone_number} - {self.total_price}'
