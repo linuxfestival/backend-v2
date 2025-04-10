@@ -1,16 +1,19 @@
+import secrets
+import string
+
 import pyotp
 from django.utils.timezone import now
 
 from django.contrib.auth.models import AnonymousUser
 from rest_framework import viewsets, mixins, status
 from rest_framework.decorators import action
-from rest_framework.permissions import BasePermission
+from rest_framework.permissions import BasePermission, IsAdminUser
 
 from . import serializers
 from .models import User, Staff, FAQ, Accessory
 from rest_framework.response import Response
 
-from .serializers import FAQSerializer, AccessorySerializer
+from .serializers import FAQSerializer, AccessorySerializer, ResetPasswordByAdminSerializer
 from .sms import SMS_EXECUTOR, send_sms, OTP_VALIDITY_PERIOD, OTP_RESEND_DELAY
 
 
@@ -51,6 +54,28 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin,
             return Response({"detail": "Password updated successfully"}, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(methods=['POST'], detail=False, permission_classes=[IsAdminUser],
+            serializer_class=ResetPasswordByAdminSerializer)
+    def reset_password_by_admin(self,request):
+        serializer = serializers.ResetPasswordByAdminSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        phone_number = serializer.validated_data['phone_number']
+
+        try:
+            user = User.objects.get(phone_number=phone_number)
+        except User.DoesNotExist:
+            return Response({'detail': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        new_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(10))
+        user.set_password(new_password)
+        user.save()
+
+        return Response({
+            'detail': 'Password has been reset.',
+            'new_password': new_password
+        }, status=status.HTTP_200_OK)
+
 
     @action(methods=['POST'], detail=False, permission_classes=[IsSamePerson],
             serializer_class=None)
