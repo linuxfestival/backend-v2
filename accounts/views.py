@@ -88,7 +88,7 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin,
                             status=status.HTTP_400_BAD_REQUEST)
 
         # TODO: Move this shit to db
-        if User.objects.filter(is_signed_up_for_competition=True).count() == 50:
+        if User.objects.filter(is_signed_up_for_competition=True).count() >= 50:
             return Response({"detail": "Fuck off we're full"}, status=status.HTTP_400_BAD_REQUEST)
 
         # TODO: Duplicated code

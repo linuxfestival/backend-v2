@@ -63,7 +63,8 @@ REST_FRAMEWORK = {
         'rest_framework.parsers.MultiPartParser',
         'rest_framework.parsers.FormParser',
     ),
-    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema'
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DATETIME_FORMAT': "%Y-%m-%dT%H:%M:%S.%f%z",
 }
 
 SIMPLE_JWT = {

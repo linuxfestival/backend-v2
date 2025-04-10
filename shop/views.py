@@ -225,6 +225,7 @@ class PaymentViewSet(viewsets.ViewSet):
 
             if payment.is_competition_payment:
                 payment.user.is_signed_up_for_competition = True
+                payment.user.save()
             else:
                 payment.participations.update(payment_state="COMPLETED")
                 if payment.coupon:
