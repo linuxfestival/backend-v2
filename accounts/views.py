@@ -84,12 +84,12 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin,
     def competition_signup(self, request):
         user = request.user
         if user.is_signed_up_for_competition:
-            return Response({"detail": "User's already registered for the upcoming competition", "suggestion": "kys"},
+            return Response({"detail": "شما برای مسابقه قبلا ثبت نام کردید!", "suggestion": "kys"},
                             status=status.HTTP_400_BAD_REQUEST)
 
         # TODO: Move this shit to db
         if User.objects.filter(is_signed_up_for_competition=True).count() >= 50:
-            return Response({"detail": "Fuck off we're full"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "ظرفیت مسابقه پر شده است!"}, status=status.HTTP_400_BAD_REQUEST)
 
         # TODO: Duplicated code
         zarrinpal = ZarrinPal()
