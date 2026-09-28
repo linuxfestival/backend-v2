@@ -39,14 +39,43 @@ services:
       - internal
 
   minio-init:
-    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    image: ${BACKEND_IMAGE:-ghcr.io/linuxfestival/backend-v2}:${BACKEND_IMAGE_TAG:?set BACKEND_IMAGE_TAG in .env}
     restart: "no"
-    entrypoint: ["/bin/sh", "-c"]
+    entrypoint: ["python", "-c"]
     command:
       - |
-        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
-        mc mb --ignore-existing "local/$$MINIO_BUCKET"
-        mc anonymous set download "local/$$MINIO_BUCKET"
+        import json, os
+        import boto3
+        from botocore.exceptions import ClientError
+
+        bucket = os.environ["MINIO_BUCKET"]
+        client = boto3.client(
+            "s3",
+            endpoint_url="http://minio:9000",
+            aws_access_key_id=os.environ["MINIO_ROOT_USER"],
+            aws_secret_access_key=os.environ["MINIO_ROOT_PASSWORD"],
+            region_name="us-east-1",
+        )
+        try:
+            client.create_bucket(Bucket=bucket)
+        except ClientError as error:
+            if error.response["Error"]["Code"] not in {
+                "BucketAlreadyExists",
+                "BucketAlreadyOwnedByYou",
+            }:
+                raise
+        client.put_bucket_policy(
+            Bucket=bucket,
+            Policy=json.dumps({
+                "Version": "2012-10-17",
+                "Statement": [{
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": ["s3:GetObject"],
+                    "Resource": [f"arn:aws:s3:::{bucket}/*"],
+                }],
+            }),
+        )
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
