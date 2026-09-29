@@ -18,6 +18,12 @@ from rest_framework.response import Response
 from .serializers import FAQSerializer, AccessorySerializer, ResetPasswordByAdminSerializer
 from .sms import SMS_EXECUTOR, send_sms, OTP_VALIDITY_PERIOD, OTP_RESEND_DELAY
 
+from rest_framework.views import APIView
+from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.response import Response
+from rest_framework import status
+from .serializers import ResumeUploadSerializer
+
 
 class IsSamePerson(BasePermission):
     message = 'You are not the owner of this account.'
@@ -205,3 +211,25 @@ class FAQViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
 class AccessoryViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     queryset = Accessory.objects.all()
     serializer_class = AccessorySerializer
+
+#Ali Moghaddam : API View handling multipart/form-data for resume submission
+class ResumeUploadView(APIView):
+    """
+    Endpoint for users to submit their resumes for sponsors.
+    Accepts multipart/form-data with a 'file' field.
+    """
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, *args, **kwargs):
+        serializer = ResumeUploadSerializer(data=request.data)
+        if serializer.is_valid():
+            user = request.user if request.user.is_authenticated else None
+            serializer.save(user=user)
+            return Response(
+                {
+                    "message": "Resume uploaded successfully.",
+                    "data": serializer.data
+                },
+                status=status.HTTP_201_CREATED
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

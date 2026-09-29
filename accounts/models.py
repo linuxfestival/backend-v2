@@ -144,3 +144,25 @@ class FAQ(models.Model):
 
     def __str__(self):
         return self.question
+
+#Ali Moghaddam : Model to store uploaded user resumes for sponsor-related purposes
+class Resume(models.Model):
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='resumes',
+        null=True,
+        blank=True,
+        help_text="User who submitted the resume"
+    )
+    file = models.FileField(
+        upload_to='resumes/',
+        help_text="Uploaded resume document (PDF only)"
+    )
+    uploaded_at = models.DateTimeField(
+        auto_now_add=True,
+        help_text="Timestamp of submission"
+    )
+
+    def __str__(self):
+        return f"Resume #{self.id} - {self.uploaded_at.strftime('%Y-%m-%d %H:%M')}"
