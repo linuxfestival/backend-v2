@@ -253,7 +253,10 @@ class PaymentViewSet(viewsets.ViewSet):
             }, response_status
 
         with transaction.atomic():
-            payment = Payment.objects.select_for_update().select_related("user", "coupon").get(pk=payment.pk)
+            # PostgreSQL cannot lock the nullable side of the outer join that
+            # select_related("coupon") creates. Lock only the payment row; the
+            # coupon is fetched and locked separately below when one exists.
+            payment = Payment.objects.select_for_update().select_related("user").get(pk=payment.pk)
             if payment.payment_state != "COMPLETED":
                 payment.ref_id = zarrinpal_response["ref_id"]
                 payment.card_pan = zarrinpal_response["card_pan"]
