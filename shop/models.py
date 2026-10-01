@@ -1,4 +1,6 @@
 from colorfield.fields import ColorField
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.conf import settings
 from rest_framework.exceptions import ValidationError
@@ -127,3 +129,31 @@ class Payment(models.Model):
 
     def __str__(self):
         return f'Payment {self.pk} - {self.user.phone_number} - {self.total_price}'
+
+
+MAX_PROPOSAL_SLIDE_SIZE = 20 * 1024 * 1024
+
+
+def validate_proposal_slide_size(value):
+    if value.size > MAX_PROPOSAL_SLIDE_SIZE:
+        raise DjangoValidationError('Slides must be 20 MB or smaller.')
+
+
+class PresentationProposal(models.Model):
+    full_name = models.CharField(max_length=255)
+    biography = models.TextField()
+    organization = models.CharField(max_length=255, blank=True)
+    phone_number = models.CharField(max_length=32)
+    topic = models.CharField(max_length=255)
+    abstract = models.TextField()
+    slides = models.FileField(
+        upload_to='presentation_proposals/',
+        validators=[
+            FileExtensionValidator(allowed_extensions=['pdf', 'ppt', 'pptx']),
+            validate_proposal_slide_size,
+        ],
+    )
+    submitted_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f'{self.full_name} - {self.topic}'

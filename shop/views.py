@@ -1,18 +1,58 @@
 from django.db import transaction
 from django.utils import timezone
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status, viewsets, mixins
 from rest_framework.decorators import action
-from rest_framework.generics import get_object_or_404, RetrieveAPIView
+from rest_framework.generics import CreateAPIView, get_object_or_404, RetrieveAPIView
+from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle
 
 from accounts.models import Accessory
 from .models import Presentation, Participation, Payment, Coupon, Presenter
 from .payments import ZarrinPal
 from .serializers import PresentationSerializer, ParticipationSerializer, PayAllSerializer, PaymentVerifySerializer, \
-    CartSerializer, PaymentListSerializer, CouponSerializer, PresenterSerializer
+    CartSerializer, PaymentListSerializer, CouponSerializer, PresenterSerializer, \
+    PresentationProposalSerializer, ProposalSubmissionResponseSerializer, \
+    ProposalSubmissionErrorSerializer, ProposalSubmissionThrottleResponseSerializer
+
+
+class ProposalSubmissionThrottle(AnonRateThrottle):
+    scope = 'presentation_proposal'
+
+
+@extend_schema_view(
+    post=extend_schema(
+        request=PresentationProposalSerializer,
+        responses={
+            201: ProposalSubmissionResponseSerializer,
+            400: OpenApiResponse(
+                response=ProposalSubmissionErrorSerializer,
+                description='Submitted fields failed validation.',
+            ),
+            429: OpenApiResponse(
+                response=ProposalSubmissionThrottleResponseSerializer,
+                description='Anonymous submission rate limit exceeded.',
+            ),
+        },
+    ),
+)
+class PresentationProposalCreateView(CreateAPIView):
+    serializer_class = PresentationProposalSerializer
+    permission_classes = [AllowAny]
+    parser_classes = [MultiPartParser]
+    throttle_classes = [ProposalSubmissionThrottle]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(
+            {'detail': 'Proposal submitted successfully.'},
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class PresentationViewSet(RetrieveAPIView, viewsets.ViewSet):

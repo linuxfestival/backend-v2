@@ -1,9 +1,18 @@
 from django.contrib import admin
 from django.http import JsonResponse
 from django.template.defaultfilters import title
+from django.utils.html import format_html
 
 from accounts.sms import SMS_EXECUTOR, send_sms
-from shop.models import Presenter, Presentation, Participation, Coupon, Payment, PresentationTag
+from shop.models import (
+    Presenter,
+    Presentation,
+    Participation,
+    Coupon,
+    Payment,
+    PresentationTag,
+    PresentationProposal,
+)
 
 admin.site.register(Presenter)
 admin.site.register(PresentationTag)
@@ -72,3 +81,27 @@ class PresentationAdmin(admin.ModelAdmin):
                 }
 
         return JsonResponse(data)
+
+
+@admin.register(PresentationProposal)
+class PresentationProposalAdmin(admin.ModelAdmin):
+    list_display = ('submitted_at', 'full_name', 'topic', 'phone_number')
+    list_filter = ('submitted_at',)
+    search_fields = ('full_name', 'organization', 'phone_number', 'topic')
+    readonly_fields = (
+        'full_name',
+        'biography',
+        'organization',
+        'phone_number',
+        'topic',
+        'abstract',
+        'submitted_at',
+        'slides_download_link',
+    )
+    fields = readonly_fields
+
+    @admin.display(description='Slides')
+    def slides_download_link(self, obj):
+        if not obj or not obj.slides:
+            return 'No slides uploaded'
+        return format_html('<a href="{}">Download slides</a>', obj.slides.url)

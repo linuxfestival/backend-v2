@@ -1,5 +1,13 @@
 from rest_framework import serializers
-from .models import Presentation, Participation, Payment, Presenter, Coupon, PresentationTag
+from .models import (
+    Presentation,
+    Participation,
+    Payment,
+    Presenter,
+    Coupon,
+    PresentationTag,
+    PresentationProposal,
+)
 
 
 class PresenterSerializer(serializers.ModelSerializer):
@@ -83,6 +91,40 @@ class PayAllSerializer(serializers.ModelSerializer):
 
 class PaymentVerifySerializer(serializers.Serializer):
     authority = serializers.CharField()
+
+
+class PresentationProposalSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PresentationProposal
+        fields = [
+            'full_name',
+            'biography',
+            'organization',
+            'phone_number',
+            'topic',
+            'abstract',
+            'slides',
+        ]
+
+
+class ProposalSubmissionResponseSerializer(serializers.Serializer):
+    detail = serializers.CharField()
+
+
+class ProposalSubmissionErrorSerializer(serializers.Serializer):
+    detail = serializers.CharField(required=False)
+    full_name = serializers.ListField(child=serializers.CharField(), required=False)
+    biography = serializers.ListField(child=serializers.CharField(), required=False)
+    organization = serializers.ListField(child=serializers.CharField(), required=False)
+    phone_number = serializers.ListField(child=serializers.CharField(), required=False)
+    topic = serializers.ListField(child=serializers.CharField(), required=False)
+    abstract = serializers.ListField(child=serializers.CharField(), required=False)
+    slides = serializers.ListField(child=serializers.CharField(), required=False)
+
+
+class ProposalSubmissionThrottleResponseSerializer(serializers.Serializer):
+    detail = serializers.CharField()
+
 
 class PaymentListSerializer(serializers.ModelSerializer):
     participations = ParticipationSerializer(many=True, read_only=True)
