@@ -25,7 +25,7 @@ class PhoneValidator(RegexValidator):
 class Accessory(models.Model):
     name = models.CharField(max_length=255)
     description = models.CharField(max_length=255)
-    price = models.FloatField(default=10000)
+    price = models.DecimalField(max_digits=12, decimal_places=2, default=10000)
     img = models.ImageField(default=None)
     is_active = models.BooleanField(default=True)
 

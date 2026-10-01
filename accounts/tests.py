@@ -13,11 +13,10 @@ class UserTestCase(APITestCase):
 
     def test_signup(self):
         response = self.client.post(self.base_url + 'users/signup/', data=self.user_data, format='json')
-        print(response.data)
         self.assertTrue(response.status_code // 100 == 2, "Registration failed: " + str(response.status_code))
 
     def test_login(self):
         self.test_signup()
         user_credentials = {'phone_number': self.user_data['phone_number'], 'password': self.user_data['password']}
-        response = self.client.post(self.base_url + 'token/', data=user_credentials, format='json')
-        print(response.data)
+        response = self.client.post(self.base_url + 'token/access/', data=user_credentials, format='json')
+        self.assertEqual(response.status_code, 200)

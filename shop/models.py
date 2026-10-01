@@ -57,7 +57,7 @@ class Presentation(models.Model):
     capacity = models.IntegerField(blank=False)
     is_registration_active = models.BooleanField(default=True)
     presentation_link = models.URLField(blank=True)
-    cost = models.FloatField(blank=False)
+    cost = models.DecimalField(max_digits=12, decimal_places=2, blank=False)
 
     morkopoloyor = models.URLField(blank=True)
 
@@ -110,11 +110,11 @@ class Coupon(models.Model):
 
 class Payment(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='payments')
-    total_price = models.FloatField(blank=False)
+    total_price = models.DecimalField(max_digits=12, decimal_places=2, blank=False)
     participations = models.ManyToManyField(Participation, related_name='payments')
     payment_state = models.CharField(choices=PAYMENT_STATES, default="PENDING", max_length=10)
 
-    authority = models.CharField(null=True, max_length=100)
+    authority = models.CharField(null=True, unique=True, max_length=100)
     pay_link = models.URLField(null=True)
     ref_id = models.CharField(null=True, max_length=100)
     card_pan = models.TextField(null=True)

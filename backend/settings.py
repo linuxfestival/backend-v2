@@ -66,6 +66,13 @@ SMS_LINE_NUMBER = os.getenv("SMS_LINE_NUMBER", default="300")
 
 PAYMENT_API_KEY = os.getenv("PAYMENT_API_KEY", default="auth")
 PAYMENT_CALLBACK_URL = os.getenv("PAYMENT_CALLBACK_URL", default="callback")
+PAYMENT_START_URL = os.getenv("PAYMENT_START_URL", default="")
+PAYMENT_RETURN_URL = os.getenv(
+    "PAYMENT_RETURN_URL",
+    default="https://linuxfest.ceit-ssc.ir/payment/perhaps",
+)
+PAYMENT_HTTP_CONNECT_TIMEOUT = float(os.getenv("PAYMENT_HTTP_CONNECT_TIMEOUT", "5"))
+PAYMENT_HTTP_READ_TIMEOUT = float(os.getenv("PAYMENT_HTTP_READ_TIMEOUT", "15"))
 
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
@@ -81,6 +88,9 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DATETIME_FORMAT': "%Y-%m-%dT%H:%M:%S.%f%z",
+    # Existing frontend contracts use JSON numbers for prices. Monetary values
+    # are Decimal internally and are converted only at the API boundary.
+    'COERCE_DECIMAL_TO_STRING': False,
 }
 
 SIMPLE_JWT = {

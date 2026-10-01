@@ -1,10 +1,15 @@
+from decimal import Decimal, ROUND_HALF_UP
+from urllib.parse import urlencode
+
+from django.conf import settings
 from django.db import transaction
+from django.shortcuts import redirect
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status, viewsets, mixins
 from rest_framework.decorators import action
-from rest_framework.generics import get_object_or_404, RetrieveAPIView
+from rest_framework.generics import RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 
@@ -75,7 +80,7 @@ class PresentationViewSet(RetrieveAPIView, viewsets.ViewSet):
     @transaction.atomic
     def remove_participation(self, request, pk=None):
         try:
-            participation = Participation.objects.select_for_update().get(id=pk)
+            participation = Participation.objects.select_for_update().get(id=pk, user=request.user)
         except Participation.DoesNotExist:
             return Response({'detail': 'Participation not found or you do not have permission to remove it.'},
                             status=status.HTTP_404_NOT_FOUND)
@@ -113,8 +118,12 @@ class PaymentViewSet(viewsets.ViewSet):
         coupon_code = serializer.validated_data.get('coupon', None)
         accessory_ids = serializer.validated_data.get('accessories', [])
 
-        participations = Participation.objects.select_for_update().filter(user=user, payment_state="PENDING")
-        if not participations.exists():
+        participation_queryset = Participation.objects.select_for_update().filter(
+            user=user,
+            payment_state="PENDING",
+        ).select_related("presentation")
+        participations = list(participation_queryset)
+        if not participations:
             return Response({"detail": "No pending participations found."},
                             status=status.HTTP_400_BAD_REQUEST)
 
@@ -137,20 +146,23 @@ class PaymentViewSet(viewsets.ViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-        total_price = sum(
-            p.presentation.cost
-            for p in participations
+        requested_accessory_ids = set(accessory_ids)
+        accessories = list(Accessory.objects.filter(
+            id__in=requested_accessory_ids,
+            is_active=True,
+        ))
+        if len(accessories) != len(requested_accessory_ids):
+            return Response(
+                {"detail": "One or more accessories are invalid or inactive."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        presentation_total = sum(
+            (participation.presentation.cost for participation in participations),
+            Decimal("0"),
         )
-        accessories = Accessory.objects.filter(id__in=accessory_ids)
-        # TODO: Check for inactive accessories and return if any isn't active
-
-        if total_price == 0:
-            for accessory in accessories.all():
-                user.accessories.add(accessory)
-            participations.update(payment_state="COMPLETED")
-            return Response(None, status=status.HTTP_204_NO_CONTENT)
-
-        total_price += sum(accessory.price for accessory in accessories)
+        accessory_total = sum((accessory.price for accessory in accessories), Decimal("0"))
+        total_price = presentation_total + accessory_total
 
         coupon = None
         if coupon_code:
@@ -158,8 +170,20 @@ class PaymentViewSet(viewsets.ViewSet):
             if not coupon:
                 return Response({"detail": "کد تخفیف نامعتبر!"},
                                 status=status.HTTP_400_BAD_REQUEST)
-            discount = (coupon.percentage / 100) * total_price
+            discount = (Decimal(coupon.percentage) / Decimal("100")) * total_price
             total_price -= discount
+
+        total_price = max(total_price, Decimal("0")).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP,
+        )
+        if total_price == 0:
+            user.accessories.add(*accessories)
+            participation_queryset.update(payment_state="COMPLETED")
+            if coupon:
+                coupon.count -= 1
+                coupon.save(update_fields=["count"])
+            return Response(None, status=status.HTTP_204_NO_CONTENT)
 
         payment = Payment.objects.create(
             user=user,
@@ -180,9 +204,7 @@ class PaymentViewSet(viewsets.ViewSet):
             authority = zarrinpal_response['authority']
             payment.authority = authority
             payment.pay_link = zarrinpal_response['link']
-            payment.save()
-
-            participations.update(payment_state="PENDING")
+            payment.save(update_fields=["authority", "pay_link"])
 
             return Response({
                 "payment_url": payment.pay_link,
@@ -190,65 +212,103 @@ class PaymentViewSet(viewsets.ViewSet):
             }, status=status.HTTP_200_OK)
         else:
             payment.payment_state = "FAILED"
-            payment.save()
+            payment.save(update_fields=["payment_state"])
             return Response({
                 "detail": "Payment initiation failed.",
                 "error": zarrinpal_response.get('error')
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            }, status=status.HTTP_502_BAD_GATEWAY)
+
+    @staticmethod
+    def _verify_authority(authority):
+        try:
+            payment = Payment.objects.select_related("user", "coupon").get(authority=authority)
+        except Payment.DoesNotExist:
+            return None, {"detail": "Payment not found."}, status.HTTP_404_NOT_FOUND
+
+        if payment.payment_state == "COMPLETED":
+            return payment, {
+                "detail": "Payment has already been verified.",
+                "ref_id": payment.ref_id,
+                "card_pan": payment.card_pan,
+                "amount": payment.total_price,
+            }, status.HTTP_200_OK
+
+        zarrinpal_response = ZarrinPal().verify_payment(
+            authority=authority,
+            amount=payment.total_price,
+        )
+        if zarrinpal_response["status"] != "success":
+            # A transport/configuration failure is retryable. Only persist FAILED
+            # when the provider explicitly rejects the verification.
+            if zarrinpal_response["status"] == "failed":
+                Payment.objects.filter(pk=payment.pk).update(payment_state="FAILED")
+            response_status = (
+                status.HTTP_400_BAD_REQUEST
+                if zarrinpal_response["status"] == "failed"
+                else status.HTTP_502_BAD_GATEWAY
+            )
+            return payment, {
+                "detail": "Payment verification failed.",
+                "error": zarrinpal_response.get("error"),
+            }, response_status
+
+        with transaction.atomic():
+            payment = Payment.objects.select_for_update().select_related("user", "coupon").get(pk=payment.pk)
+            if payment.payment_state != "COMPLETED":
+                payment.ref_id = zarrinpal_response["ref_id"]
+                payment.card_pan = zarrinpal_response["card_pan"]
+                payment.payment_state = "COMPLETED"
+                payment.verified_date = timezone.now()
+                payment.save(update_fields=[
+                    "ref_id", "card_pan", "payment_state", "verified_date",
+                ])
+
+                if payment.is_competition_payment:
+                    payment.user.is_signed_up_for_competition = True
+                    payment.user.save(update_fields=["is_signed_up_for_competition"])
+                else:
+                    payment.participations.update(payment_state="COMPLETED")
+                    if payment.coupon_id:
+                        coupon = Coupon.objects.select_for_update().get(pk=payment.coupon_id)
+                        if coupon.count > 0:
+                            coupon.count -= 1
+                            coupon.save(update_fields=["count"])
+                    payment.user.accessories.add(*payment.accessories.all())
+
+        return payment, {
+            "detail": "Payment verified successfully.",
+            "ref_id": payment.ref_id,
+            "card_pan": payment.card_pan,
+            "amount": payment.total_price,
+        }, status.HTTP_200_OK
 
     @extend_schema(request=PaymentVerifySerializer, responses={200: 'detail, ref_id, card_pan, amount'})
     @action(methods=['post'], detail=False, permission_classes=[])
-    @transaction.atomic
     def verify(self, request):
         serializer = PaymentVerifySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         authority = serializer.validated_data['authority']
 
-        payment = get_object_or_404(Payment.objects.select_for_update(), authority=authority)
+        _payment, payload, response_status = self._verify_authority(authority)
+        return Response(payload, status=response_status)
 
-        if payment.payment_state == "COMPLETED":
-            return Response({"detail": "Payment has already been verified."},
-                            status=status.HTTP_200_OK)
+    @extend_schema(responses={302: None})
+    @action(methods=['get'], detail=False, permission_classes=[], url_path='provider-callback')
+    def provider_callback(self, request):
+        authority = request.query_params.get("Authority")
+        payment = None
+        response_status = status.HTTP_400_BAD_REQUEST
+        if authority:
+            payment, _payload, response_status = self._verify_authority(authority)
 
-        zarrinpal = ZarrinPal()
-        zarrinpal_response = zarrinpal.verify_payment(
-            authority=authority,
-            amount=payment.total_price
-        )
-
-        if zarrinpal_response['status'] == 'success':
-            payment.ref_id = zarrinpal_response['ref_id']
-            payment.card_pan = zarrinpal_response['card_pan']
-            payment.payment_state = "COMPLETED"
-            payment.verified_date = timezone.now()
-            payment.save()
-
-            if payment.is_competition_payment:
-                payment.user.is_signed_up_for_competition = True
-                payment.user.save()
-            else:
-                payment.participations.update(payment_state="COMPLETED")
-                if payment.coupon:
-                    payment.coupon.count -= 1
-                    payment.coupon.save()
-
-                for accessory in payment.accessories.all():
-                    payment.user.accessories.add(accessory)
-
-            return Response({
-                "detail": "Payment verified successfully.",
-                "ref_id": payment.ref_id,
-                "card_pan": payment.card_pan,
-                "amount": payment.total_price,
-            }, status=status.HTTP_200_OK)
-        else:
-            payment.payment_state = "FAILED"
-            payment.save()
-
-            return Response({
-                "detail": "Payment verification failed.",
-                "error": zarrinpal_response.get('error')
-            }, status=status.HTTP_400_BAD_REQUEST)
+        query = {
+            "Authority": authority or "",
+            "Status": "OK" if response_status == status.HTTP_200_OK else "NOK",
+        }
+        if payment and payment.ref_id:
+            query["RefID"] = payment.ref_id
+        separator = "&" if "?" in settings.PAYMENT_RETURN_URL else "?"
+        return redirect(f"{settings.PAYMENT_RETURN_URL}{separator}{urlencode(query)}")
 
     @extend_schema(responses={200: PaymentListSerializer(many=True)})
     @action(methods=['get'], detail=False, permission_classes=[IsAuthenticated])
