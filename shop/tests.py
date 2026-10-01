@@ -57,6 +57,16 @@ class PresentationProposalApiTests(APITestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(PresentationProposal.objects.get().organization, '')
 
+    def test_slides_are_optional(self):
+        payload = self.make_payload()
+        del payload['slides']
+
+        response = self.client.post(self.url, payload, format='multipart')
+
+        self.assertEqual(response.status_code, 201)
+        proposal = PresentationProposal.objects.get()
+        self.assertFalse(proposal.slides)
+
     def test_each_other_field_is_required(self):
         required_fields = (
             'full_name',
@@ -64,7 +74,6 @@ class PresentationProposalApiTests(APITestCase):
             'phone_number',
             'topic',
             'abstract',
-            'slides',
         )
 
         for field in required_fields:

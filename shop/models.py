@@ -148,6 +148,7 @@ class PresentationProposal(models.Model):
     abstract = models.TextField()
     slides = models.FileField(
         upload_to='presentation_proposals/',
+        blank=True,
         validators=[
             FileExtensionValidator(allowed_extensions=['pdf', 'ppt', 'pptx']),
             validate_proposal_slide_size,
