@@ -1,22 +1,30 @@
+import logging
 import secrets
 import string
 
-import pyotp
-from django.utils.timezone import now
-
+from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from rest_framework import viewsets, mixins, status
 from rest_framework.decorators import action
 from rest_framework.permissions import BasePermission, IsAdminUser
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+from rest_framework_simplejwt.views import TokenObtainPairView
 
 from shop.models import Payment
 from shop.payments import ZarrinPal
 from . import serializers
-from .models import User, Staff, FAQ, Accessory
+from .emailing import OTPError, OTPThrottled, send_otp, validate_otp
+from .models import OTPPurpose, User, Staff, FAQ, Accessory
 from rest_framework.response import Response
 
 from .serializers import FAQSerializer, AccessorySerializer, ResetPasswordByAdminSerializer
-from .sms import SMS_EXECUTOR, send_sms, OTP_VALIDITY_PERIOD, OTP_RESEND_DELAY
+
+
+logger = logging.getLogger(__name__)
+
+
+class EmailTokenObtainPairView(TokenObtainPairView):
+    serializer_class = serializers.EmailTokenObtainPairSerializer
 
 
 class IsSamePerson(BasePermission):
@@ -131,70 +139,138 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin,
             serializer_class=serializers.UserRegistrationSerializer)
     def signup(self, request):
         serializer = serializers.UserRegistrationSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save(is_active=False)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        response = {
+            **serializer.data,
+            "verification_required": settings.EMAIL_VERIFICATION_ENABLED,
+            "is_first_login": user.is_first_login,
+        }
+        if settings.EMAIL_VERIFICATION_ENABLED:
+            try:
+                send_otp(user, OTPPurpose.EMAIL_VERIFICATION)
+            except Exception:
+                logger.exception("Unable to send signup verification email to user %s", user.pk)
+                return Response({
+                    "detail": "Account created, but the verification email could not be sent. Try resending it.",
+                    "verification_required": True,
+                    "email": user.email,
+                }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        else:
+            response["tokens"] = serializers.tokens_for_user(user)
+
+        return Response(response, status=status.HTTP_201_CREATED)
 
     @action(methods=['POST'], detail=False, permission_classes=[],
             serializer_class=serializers.SendVerificationSerializer)
-    def verify(self, request):
+    def resend_activation(self, request):
         serializer = serializers.SendVerificationSerializer(data=request.data)
-        if serializer.is_valid():
-            phone_number = serializer.validated_data['phone_number']
+        serializer.is_valid(raise_exception=True)
+        if not settings.EMAIL_VERIFICATION_ENABLED:
+            return Response({"detail": "Email verification is disabled."})
 
-            try:
-                user = User.objects.get(phone_number=phone_number)
-            except User.DoesNotExist:
-                return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+        user = User.objects.filter(email__iexact=serializer.validated_data["email"]).first()
+        if not user:
+            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+        if user.is_active:
+            return Response({"detail": "This email is already verified."})
 
-            if user.last_otp_sent and (now() - user.last_otp_sent).seconds < OTP_RESEND_DELAY:
-                return Response({"detail": "Please wait before requesting another OTP."},
-                                status=status.HTTP_429_TOO_MANY_REQUESTS)
+        try:
+            send_otp(user, OTPPurpose.EMAIL_VERIFICATION)
+        except OTPThrottled as error:
+            return Response({"detail": str(error)}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+        except Exception:
+            logger.exception("Unable to resend verification email to user %s", user.pk)
+            return Response({"detail": "The verification email could not be sent."},
+                            status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({"detail": "Verification code sent to your email."})
 
-            secret_key = pyotp.random_base32()
-            user.otp_code = secret_key
-            user.last_otp_sent = now()
-            user.save()
-
-            totp = pyotp.TOTP(secret_key, interval=OTP_VALIDITY_PERIOD)
-            otp = totp.now()
-
-            mobiles = [user.phone_number, ]
-            SMS_EXECUTOR.submit(send_sms, mobiles, f"Your verification code is {otp}.")
-
-            return Response({"detail": "Verification code sent to your phone."}, status=status.HTTP_200_OK)
-
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    @action(methods=['POST'], detail=False, permission_classes=[],
+            serializer_class=serializers.SendVerificationSerializer,
+            url_path="verify")
+    def verify(self, request):
+        """Backward-compatible alias for the old resend endpoint."""
+        return self.resend_activation(request)
 
     @action(methods=['POST'], detail=False, permission_classes=[],
             serializer_class=serializers.ActivateUserSerializer)
     def activate(self, request):
         serializer = serializers.ActivateUserSerializer(data=request.data)
-        if serializer.is_valid():
-            phone_number = serializer.validated_data['phone_number']
-            otp = serializer.validated_data["code"]
+        serializer.is_valid(raise_exception=True)
+        user = User.objects.filter(email__iexact=serializer.validated_data["email"]).first()
+        if not user:
+            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+        if user.is_active:
+            return Response({"detail": "This email is already verified."})
 
+        try:
+            validate_otp(user, serializer.validated_data["code"], OTPPurpose.EMAIL_VERIFICATION)
+        except OTPError as error:
+            return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.is_active = True
+        user.save(update_fields=["is_active"])
+        return Response({
+            "detail": "Email verified successfully.",
+            "tokens": serializers.tokens_for_user(user),
+            "phone_number": user.phone_number,
+            "is_first_login": user.is_first_login,
+        })
+
+    @action(methods=['POST'], detail=False, permission_classes=[],
+            serializer_class=serializers.PasswordResetRequestSerializer)
+    def password_reset_request(self, request):
+        serializer = serializers.PasswordResetRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = User.objects.filter(
+            email__iexact=serializer.validated_data["email"], is_active=True
+        ).first()
+        if user:
             try:
-                user = User.objects.get(phone_number=phone_number)
-            except User.DoesNotExist:
-                return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+                send_otp(user, OTPPurpose.PASSWORD_RESET)
+            except OTPThrottled as error:
+                return Response({"detail": str(error)}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+            except Exception:
+                logger.exception("Unable to send password reset email to user %s", user.pk)
+        return Response({
+            "detail": "If an active account exists for this email, a reset code has been sent."
+        })
 
-            if not user.otp_code:
-                return Response({"detail": "No OTP generated for this user."}, status=status.HTTP_400_BAD_REQUEST)
+    @action(methods=['POST'], detail=False, permission_classes=[],
+            serializer_class=serializers.PasswordResetConfirmSerializer)
+    def password_reset_confirm(self, request):
+        serializer = serializers.PasswordResetConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = User.objects.filter(
+            email__iexact=serializer.validated_data["email"], is_active=True
+        ).first()
+        if not user:
+            return Response({"detail": "Invalid email or code."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            validate_otp(user, serializer.validated_data["code"], OTPPurpose.PASSWORD_RESET)
+        except OTPError as error:
+            return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
 
-            totp = pyotp.TOTP(user.otp_code, interval=OTP_VALIDITY_PERIOD)
-            if not totp.verify(otp):
-                return Response({"detail": "Invalid or expired activation code"}, status=status.HTTP_400_BAD_REQUEST)
+        user.set_password(serializer.validated_data["new_password"])
+        user.save(update_fields=["password"])
+        for token in OutstandingToken.objects.filter(user=user):
+            BlacklistedToken.objects.get_or_create(token=token)
+        return Response({"detail": "Password updated successfully."})
 
-            user.is_active = True
-            user.otp_code = ""
-            user.save()
+    @action(methods=['GET', 'POST'], detail=False, permission_classes=[IsSamePerson],
+            serializer_class=serializers.OnboardingSerializer)
+    def onboarding(self, request):
+        if request.method == "GET":
+            return Response(serializers.OnboardingSerializer(request.user).data)
 
-            return Response({"detail": "Phone number verified successfully."}, status=status.HTTP_200_OK)
-
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer = serializers.OnboardingSerializer(
+            request.user, data=request.data, partial=False
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
 
 
 class FAQViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
