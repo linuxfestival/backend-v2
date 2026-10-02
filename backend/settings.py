@@ -32,6 +32,11 @@ def env_bool(name, default=False):
 def env_list(name, default=""):
     return [item.strip() for item in os.getenv(name, default).split(",") if item.strip()]
 
+
+def env_int(name, default):
+    value = os.getenv(name, "").strip()
+    return int(value) if value else default
+
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv("SECRET_KEY", default="key34572dfg57ll90xdvs234ghh$")
 
@@ -63,6 +68,23 @@ CSRF_COOKIE_SECURE = env_bool("CSRF_COOKIE_SECURE", True)
 
 SMS_KEY = os.getenv("SMS_KEY", default="key")
 SMS_LINE_NUMBER = os.getenv("SMS_LINE_NUMBER", default="300")
+
+EMAIL_VERIFICATION_ENABLED = env_bool("EMAIL_VERIFICATION_ENABLED")
+EMAIL_OTP_TTL_SECONDS = env_int("EMAIL_OTP_TTL_SECONDS", 600)
+EMAIL_OTP_RESEND_SECONDS = env_int("EMAIL_OTP_RESEND_SECONDS", 60)
+EMAIL_OTP_MAX_ATTEMPTS = env_int("EMAIL_OTP_MAX_ATTEMPTS", 5)
+
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = os.getenv("MAIL_HOST", "")
+EMAIL_PORT = env_int("MAIL_PORT", 587)
+EMAIL_HOST_USER = os.getenv("MAIL_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("MAIL_PASSWORD", "")
+EMAIL_USE_TLS = env_bool("MAIL_USE_TLS", True)
+EMAIL_USE_SSL = env_bool("MAIL_USE_SSL")
+EMAIL_TIMEOUT = env_int("MAIL_TIMEOUT", 10)
+MAIL_FROM_ADDRESS = os.getenv("MAIL_FROM_ADDRESS", "noreply@localhost")
+MAIL_FROM_NAME = os.getenv("MAIL_FROM_NAME", "LinuxFest")
+DEFAULT_FROM_EMAIL = f"{MAIL_FROM_NAME} <{MAIL_FROM_ADDRESS}>"
 
 PAYMENT_API_KEY = os.getenv("PAYMENT_API_KEY", default="auth")
 PAYMENT_CALLBACK_URL = os.getenv("PAYMENT_CALLBACK_URL", default="callback")
@@ -147,7 +169,7 @@ MIDDLEWARE = [
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
+        'ENGINE': os.getenv('DB_ENGINE', 'django.db.backends.postgresql'),
         'NAME': os.getenv('DB_NAME', 'linuxfest'),
         'USER': os.getenv('DB_USER', 'linuxfest'),
         'PASSWORD': os.getenv('DB_PASSWORD', ''),
