@@ -1,7 +1,7 @@
 from colorfield.fields import ColorField
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.conf import settings
-from rest_framework.exceptions import ValidationError
 from tinymce.models import HTMLField
 
 from accounts.models import Accessory

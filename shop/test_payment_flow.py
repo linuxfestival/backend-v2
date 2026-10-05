@@ -240,6 +240,22 @@ class ShopValidationTests(TestCase):
         with self.assertRaises(ValidationError):
             presentation.full_clean()
 
+    def test_negative_cost_uses_django_model_validation(self):
+        start = timezone.now() + timedelta(days=1)
+        presentation = Presentation(
+            service_type="WORKSHOP",
+            en_title="Invalid cost",
+            fa_title="هزینه نامعتبر",
+            start=start,
+            end=start + timedelta(hours=1),
+            en_description="Test",
+            fa_description="Test",
+            capacity=1,
+            cost=Decimal("-1"),
+        )
+        with self.assertRaises(ValidationError):
+            presentation.full_clean()
+
     def test_coupon_validity_is_serialized_from_remaining_count(self):
         invalid = Coupon.objects.create(name="EMPTY", count=0, percentage=10)
         valid = Coupon.objects.create(name="VALID", count=1, percentage=10)
