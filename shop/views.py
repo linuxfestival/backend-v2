@@ -147,13 +147,22 @@ class PaymentViewSet(viewsets.ViewSet):
 
         requested_accessory_ids = set(accessory_ids)
         requested_participation_ids = {item.pk for item in participations}
-        pending_payments = list(Payment.objects.select_for_update().filter(
+        # PostgreSQL does not allow SELECT DISTINCT together with FOR UPDATE.
+        # Resolve distinct ids in a subquery, then lock the payment rows in the
+        # outer query so concurrent checkout retries remain idempotent.
+        pending_payment_ids = Payment.objects.filter(
             user=user,
             payment_state="PENDING",
             is_competition_payment=False,
             authority__isnull=False,
             participations__in=participations,
-        ).prefetch_related("participations", "accessories").distinct().order_by("-created_date"))
+        ).values_list("pk", flat=True).distinct()
+        pending_payments = list(
+            Payment.objects.select_for_update()
+            .filter(pk__in=pending_payment_ids)
+            .prefetch_related("participations", "accessories")
+            .order_by("-created_date")
+        )
         for pending_payment in pending_payments:
             same_checkout = (
                 {item.pk for item in pending_payment.participations.all()}
