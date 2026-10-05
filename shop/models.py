@@ -54,7 +54,7 @@ class Presentation(models.Model):
 
     en_description = HTMLField()
     fa_description = HTMLField()
-    capacity = models.IntegerField(blank=False)
+    capacity = models.PositiveIntegerField(blank=False)
     is_registration_active = models.BooleanField(default=True)
     presentation_link = models.URLField(blank=True)
     cost = models.DecimalField(max_digits=12, decimal_places=2, blank=False)
@@ -71,7 +71,20 @@ class Presentation(models.Model):
             raise ValidationError("End time must be after start time.")
 
     def get_remained_capacity(self):
-        return self.capacity - Participation.objects.filter(presentation=self, payment_state="COMPLETED").count()
+        # A started gateway payment reserves its seat until it is completed or
+        # explicitly fails. This prevents two users from paying for the final
+        # seat at the same time.
+        committed = Participation.objects.filter(
+            presentation=self,
+        ).filter(
+            models.Q(payment_state="COMPLETED")
+            | models.Q(
+                payment_state="PENDING",
+                payments__payment_state="PENDING",
+                payments__authority__isnull=False,
+            )
+        ).distinct().count()
+        return max(self.capacity - committed, 0)
 
 
     def participations(self):
@@ -85,6 +98,14 @@ class Participation(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='participations')
     presentation = models.ForeignKey(Presentation, on_delete=models.CASCADE, related_name='participations')
     payment_state = models.CharField(choices=PAYMENT_STATES, default="PENDING", max_length=10)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "presentation"],
+                name="unique_user_presentation",
+            ),
+        ]
 
     def __str__(self):
         return f'{self.user.phone_number} - {self.presentation.en_title}'

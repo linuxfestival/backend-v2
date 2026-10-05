@@ -91,7 +91,7 @@ PAYMENT_CALLBACK_URL = os.getenv("PAYMENT_CALLBACK_URL", default="callback")
 PAYMENT_START_URL = os.getenv("PAYMENT_START_URL", default="")
 PAYMENT_RETURN_URL = os.getenv(
     "PAYMENT_RETURN_URL",
-    default="https://linuxfest.ceit-ssc.ir/payment/perhaps",
+    default="https://linuxfest.ir/payment/perhaps",
 )
 PAYMENT_HTTP_CONNECT_TIMEOUT = float(os.getenv("PAYMENT_HTTP_CONNECT_TIMEOUT", "5"))
 PAYMENT_HTTP_READ_TIMEOUT = float(os.getenv("PAYMENT_HTTP_READ_TIMEOUT", "15"))

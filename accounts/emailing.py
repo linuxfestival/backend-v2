@@ -43,6 +43,13 @@ def send_otp(user: User, purpose: str):
             retry_after = max(1, int(settings.EMAIL_OTP_RESEND_SECONDS - elapsed))
             raise OTPThrottled(f"Please wait {retry_after} seconds before requesting another code.")
 
+    previous_state = {
+        "otp_code": user.otp_code,
+        "otp_purpose": user.otp_purpose,
+        "otp_expires_at": user.otp_expires_at,
+        "otp_attempts": user.otp_attempts,
+        "last_otp_sent": user.last_otp_sent,
+    }
     code = _generate_code()
     user.otp_code = make_password(code)
     user.otp_purpose = purpose
@@ -61,7 +68,14 @@ def send_otp(user: User, purpose: str):
         subject = "LinuxFest email verification code"
         message = f"Your LinuxFest email verification code is: {code}"
 
-    send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email], fail_silently=False)
+    try:
+        send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email], fail_silently=False)
+    except Exception:
+        # Do not throttle a retry for a code the mail server did not accept.
+        for field, value in previous_state.items():
+            setattr(user, field, value)
+        user.save(update_fields=list(previous_state))
+        raise
 
 
 def validate_otp(user: User, code: str, purpose: str):

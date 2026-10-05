@@ -1,4 +1,5 @@
 import re
+from unittest.mock import patch
 
 from django.core import mail
 from django.test import override_settings
@@ -74,6 +75,47 @@ class UserAuthTestCase(APITestCase):
         self.assertEqual(activation.status_code, 200)
         self.assertIn("access", activation.data["tokens"])
         self.assertTrue(User.objects.get(pk=user.pk).is_active)
+
+    def test_unverified_signup_retry_resends_without_replacing_credentials(self):
+        first = self.signup()
+        self.assertEqual(first.status_code, 201)
+        retry_payload = {
+            **self.user_data,
+            "first_name": "Attacker cannot replace this",
+            "password": "A-different-password-456",
+        }
+
+        second = self.client.post("/api/users/signup/", retry_payload, format="json")
+
+        self.assertEqual(second.status_code, 200)
+        self.assertTrue(second.data["verification_required"])
+        self.assertEqual(User.objects.filter(email="test@example.com").count(), 1)
+        user = User.objects.get(email="test@example.com")
+        self.assertTrue(user.check_password(self.user_data["password"]))
+        self.assertEqual(user.first_name, self.user_data["first_name"])
+        self.assertEqual(len(mail.outbox), 2)
+
+    def test_unverified_signup_retry_requires_same_phone(self):
+        self.signup()
+        response = self.client.post("/api/users/signup/", {
+            **self.user_data,
+            "phone_number": "09120000000",
+        }, format="json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(User.objects.count(), 1)
+
+    def test_failed_signup_email_does_not_throttle_retry(self):
+        with patch("accounts.emailing.send_mail", side_effect=RuntimeError("SMTP unavailable")):
+            response = self.signup()
+        self.assertEqual(response.status_code, 503)
+        user = User.objects.get(email="test@example.com")
+        self.assertIsNone(user.last_otp_sent)
+        self.assertIsNone(user.otp_code)
+
+        retry = self.signup()
+        self.assertEqual(retry.status_code, 200)
+        self.assertEqual(len(mail.outbox), 1)
 
     @override_settings(EMAIL_VERIFICATION_ENABLED=False)
     def test_disabled_verification_activates_immediately(self):

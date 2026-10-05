@@ -49,7 +49,7 @@ class ParticipationSerializer(serializers.ModelSerializer):
         model = Participation
 
 class CouponSerializer(serializers.ModelSerializer):
-    is_valid = serializers.BooleanField(default=False)
+    is_valid = serializers.SerializerMethodField()
     class Meta:
         fields = ['percentage', 'is_valid']
         model = Coupon

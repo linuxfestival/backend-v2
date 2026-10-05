@@ -4,7 +4,9 @@ import string
 
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
+from django.db import transaction
 from rest_framework import viewsets, mixins, status
+from rest_framework.exceptions import ValidationError
 from rest_framework.decorators import action
 from rest_framework.permissions import BasePermission, IsAdminUser
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
@@ -89,15 +91,28 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin,
 
     @action(methods=['POST'], detail=False, permission_classes=[IsSamePerson],
             serializer_class=None)
+    @transaction.atomic
     def competition_signup(self, request):
-        user = request.user
+        user = User.objects.select_for_update().get(pk=request.user.pk)
         if user.is_signed_up_for_competition:
-            return Response({"detail": "شما برای مسابقه قبلا ثبت نام کردید!", "suggestion": "kys"},
+            return Response({"detail": "شما برای مسابقه قبلا ثبت نام کردید!"},
                             status=status.HTTP_400_BAD_REQUEST)
 
         # TODO: Move this shit to db
         if User.objects.filter(is_signed_up_for_competition=True).count() >= 50:
             return Response({"detail": "ظرفیت مسابقه پر شده است!"}, status=status.HTTP_400_BAD_REQUEST)
+
+        pending_payment = Payment.objects.select_for_update().filter(
+            user=user,
+            is_competition_payment=True,
+            payment_state="PENDING",
+            authority__isnull=False,
+        ).order_by("-created_date").first()
+        if pending_payment:
+            return Response({
+                "payment_url": pending_payment.pay_link,
+                "authority": pending_payment.authority,
+            }, status=status.HTTP_200_OK)
 
         # TODO: Duplicated code
         zarrinpal = ZarrinPal()
@@ -138,8 +153,18 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin,
     @action(methods=['POST'], detail=False, permission_classes=[],
             serializer_class=serializers.UserRegistrationSerializer)
     def signup(self, request):
-        serializer = serializers.UserRegistrationSerializer(data=request.data)
+        existing = None
+        email = str(request.data.get("email", "")).strip().lower()
+        if settings.EMAIL_VERIFICATION_ENABLED and email:
+            existing = User.objects.filter(email__iexact=email, is_active=False).first()
+
+        serializer = serializers.UserRegistrationSerializer(
+            existing, data=request.data
+        ) if existing else serializers.UserRegistrationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+
+        if existing and serializer.validated_data["phone_number"] != existing.phone_number:
+            raise ValidationError({"email": ["This email address has already been reserved."]})
         user = serializer.save()
 
         response = {
@@ -150,6 +175,11 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin,
         if settings.EMAIL_VERIFICATION_ENABLED:
             try:
                 send_otp(user, OTPPurpose.EMAIL_VERIFICATION)
+            except OTPThrottled as error:
+                # A valid code was sent recently. Returning success lets the
+                # client continue to the verification form on signup retry.
+                response["detail"] = str(error)
+                return Response(response, status=status.HTTP_200_OK)
             except Exception:
                 logger.exception("Unable to send signup verification email to user %s", user.pk)
                 return Response({
@@ -160,7 +190,10 @@ class UserViewSet(mixins.UpdateModelMixin, mixins.RetrieveModelMixin,
         else:
             response["tokens"] = serializers.tokens_for_user(user)
 
-        return Response(response, status=status.HTTP_201_CREATED)
+        return Response(
+            response,
+            status=status.HTTP_200_OK if existing else status.HTTP_201_CREATED,
+        )
 
     @action(methods=['POST'], detail=False, permission_classes=[],
             serializer_class=serializers.SendVerificationSerializer)

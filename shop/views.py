@@ -79,9 +79,18 @@ class PresentationViewSet(RetrieveAPIView, viewsets.ViewSet):
     @action(detail=True, methods=['delete'], permission_classes=[IsAuthenticated])
     @transaction.atomic
     def remove_participation(self, request, pk=None):
-        try:
-            participation = Participation.objects.select_for_update().get(id=pk, user=request.user)
-        except Participation.DoesNotExist:
+        # The route is nested under presentations, while an older frontend
+        # sent the participation id. Accept both during the migration period.
+        participation = Participation.objects.select_for_update().filter(
+            presentation_id=pk,
+            user=request.user,
+        ).first()
+        if participation is None:
+            participation = Participation.objects.select_for_update().filter(
+                id=pk,
+                user=request.user,
+            ).first()
+        if participation is None:
             return Response({'detail': 'Participation not found or you do not have permission to remove it.'},
                             status=status.HTTP_404_NOT_FOUND)
 
@@ -96,6 +105,15 @@ class PresentationViewSet(RetrieveAPIView, viewsets.ViewSet):
             return Response(
                 {'detail': f'Cannot remove participation; presentation {presentation.en_title} has already completed.'},
                 status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if participation.payments.filter(
+            payment_state="PENDING",
+            authority__isnull=False,
+        ).exists():
+            return Response(
+                {'detail': 'Cannot remove participation while its payment is in progress.'},
+                status=status.HTTP_409_CONFLICT,
             )
 
         participation.delete()
@@ -127,8 +145,42 @@ class PaymentViewSet(viewsets.ViewSet):
             return Response({"detail": "No pending participations found."},
                             status=status.HTTP_400_BAD_REQUEST)
 
+        requested_accessory_ids = set(accessory_ids)
+        requested_participation_ids = {item.pk for item in participations}
+        pending_payments = list(Payment.objects.select_for_update().filter(
+            user=user,
+            payment_state="PENDING",
+            is_competition_payment=False,
+            authority__isnull=False,
+            participations__in=participations,
+        ).prefetch_related("participations", "accessories").distinct().order_by("-created_date"))
+        for pending_payment in pending_payments:
+            same_checkout = (
+                {item.pk for item in pending_payment.participations.all()}
+                == requested_participation_ids
+                and {item.pk for item in pending_payment.accessories.all()}
+                == requested_accessory_ids
+                and pending_payment.coupon_id == (coupon_code or None)
+            )
+            if same_checkout:
+                return Response({
+                    "payment_url": pending_payment.pay_link,
+                    "authority": pending_payment.authority,
+                }, status=status.HTTP_200_OK)
+        if pending_payments:
+            return Response(
+                {"detail": "A payment is already in progress for an item in this cart."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        presentation_ids = {item.presentation_id for item in participations}
+        locked_presentations = {
+            item.pk: item
+            for item in Presentation.objects.select_for_update().filter(pk__in=presentation_ids)
+        }
+
         for participation in participations:
-            presentation = participation.presentation
+            presentation = locked_presentations[participation.presentation_id]
 
             if presentation.start <= timezone.now():
                 return Response(
@@ -146,7 +198,6 @@ class PaymentViewSet(viewsets.ViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-        requested_accessory_ids = set(accessory_ids)
         accessories = list(Accessory.objects.filter(
             id__in=requested_accessory_ids,
             is_active=True,

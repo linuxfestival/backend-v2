@@ -3,6 +3,7 @@ from decimal import Decimal
 from unittest.mock import Mock, patch
 from urllib.parse import parse_qs, urlparse
 
+from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -10,7 +11,8 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from accounts.models import Accessory, User
-from shop.models import Payment, Presentation, Participation
+from shop.models import Coupon, Payment, Presentation, Participation
+from shop.serializers import CouponSerializer
 from shop.payments import ZarrinPal
 
 
@@ -18,7 +20,7 @@ PAYMENT_SETTINGS = {
     "PAYMENT_API_KEY": "11111111-1111-1111-1111-111111111111",
     "PAYMENT_CALLBACK_URL": "https://ceit-ssc.ir/payment/linuxfest/zarinpal/callback",
     "PAYMENT_START_URL": "https://ceit-ssc.ir/payment/start",
-    "PAYMENT_RETURN_URL": "https://linuxfest.ceit-ssc.ir/payment/perhaps",
+    "PAYMENT_RETURN_URL": "https://linuxfest.ir/payment/perhaps",
     "PAYMENT_HTTP_CONNECT_TIMEOUT": 5.0,
     "PAYMENT_HTTP_READ_TIMEOUT": 15.0,
 }
@@ -136,7 +138,7 @@ class PaymentFlowTests(APITestCase):
 
         self.assertEqual(response.status_code, 302)
         target = urlparse(response["Location"])
-        self.assertEqual(target.netloc, "linuxfest.ceit-ssc.ir")
+        self.assertEqual(target.netloc, "linuxfest.ir")
         self.assertEqual(target.path, "/payment/perhaps")
         self.assertEqual(parse_qs(target.query)["Status"], ["OK"])
         payment.refresh_from_db()
@@ -144,6 +146,106 @@ class PaymentFlowTests(APITestCase):
         self.assertEqual(payment.payment_state, "COMPLETED")
         self.assertEqual(payment.ref_id, "REF123")
         self.assertEqual(self.participation.payment_state, "COMPLETED")
+
+    def test_remove_accepts_presentation_id(self):
+        self.participation.delete()
+        participation = Participation.objects.create(
+            user=self.user,
+            presentation=self.presentation,
+        )
+        self.assertNotEqual(participation.pk, self.presentation.pk)
+
+        response = self.client.delete(
+            reverse("presentation-remove-participation", args=[self.presentation.pk])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Participation.objects.filter(pk=participation.pk).exists())
+
+    def test_remove_accepts_legacy_participation_id(self):
+        self.participation.delete()
+        participation = Participation.objects.create(
+            user=self.user,
+            presentation=self.presentation,
+        )
+
+        response = self.client.delete(
+            reverse("presentation-remove-participation", args=[participation.pk])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Participation.objects.filter(pk=participation.pk).exists())
+
+    def test_remove_rejects_item_with_payment_in_progress(self):
+        payment = Payment.objects.create(
+            user=self.user,
+            total_price=Decimal("10000.00"),
+            authority="REMOVELOCK123",
+        )
+        payment.participations.add(self.participation)
+
+        response = self.client.delete(
+            reverse("presentation-remove-participation", args=[self.presentation.pk])
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(Participation.objects.filter(pk=self.participation.pk).exists())
+
+    @patch("shop.views.ZarrinPal.create_payment")
+    def test_repeated_checkout_reuses_existing_payment(self, create_payment):
+        self.presentation.cost = Decimal("10000.00")
+        self.presentation.save(update_fields=["cost"])
+        create_payment.return_value = {
+            "status": "success",
+            "authority": "REUSE123",
+            "link": "https://ceit-ssc.ir/payment/start?gateway=test",
+        }
+
+        first = self.client.post(reverse("payment-pay-all"), {}, format="json")
+        second = self.client.post(reverse("payment-pay-all"), {}, format="json")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.data["authority"], "REUSE123")
+        self.assertEqual(create_payment.call_count, 1)
+        self.assertEqual(Payment.objects.filter(user=self.user).count(), 1)
+
+    def test_started_payment_reserves_capacity(self):
+        self.presentation.capacity = 1
+        self.presentation.save(update_fields=["capacity"])
+        payment = Payment.objects.create(
+            user=self.user,
+            total_price=Decimal("10000.00"),
+            authority="RESERVED123",
+        )
+        payment.participations.add(self.participation)
+
+        self.assertEqual(self.presentation.get_remained_capacity(), 0)
+
+
+class ShopValidationTests(TestCase):
+    def test_negative_capacity_is_rejected(self):
+        start = timezone.now() + timedelta(days=1)
+        presentation = Presentation(
+            service_type="WORKSHOP",
+            en_title="Invalid capacity",
+            fa_title="ظرفیت نامعتبر",
+            start=start,
+            end=start + timedelta(hours=1),
+            en_description="Test",
+            fa_description="Test",
+            capacity=-1,
+            cost=Decimal("0"),
+        )
+        with self.assertRaises(ValidationError):
+            presentation.full_clean()
+
+    def test_coupon_validity_is_serialized_from_remaining_count(self):
+        invalid = Coupon.objects.create(name="EMPTY", count=0, percentage=10)
+        valid = Coupon.objects.create(name="VALID", count=1, percentage=10)
+
+        self.assertFalse(CouponSerializer(invalid).data["is_valid"])
+        self.assertTrue(CouponSerializer(valid).data["is_valid"])
 
 
 class PaymentTestItemCommandTests(TestCase):
