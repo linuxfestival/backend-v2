@@ -287,6 +287,7 @@ class PaymentViewSet(viewsets.ViewSet):
 
         if payment.payment_state == "COMPLETED":
             return payment, {
+                "status": "success",
                 "detail": "Payment has already been verified.",
                 "ref_id": payment.ref_id,
                 "card_pan": payment.card_pan,
@@ -308,6 +309,7 @@ class PaymentViewSet(viewsets.ViewSet):
                 else status.HTTP_502_BAD_GATEWAY
             )
             return payment, {
+                "status": zarrinpal_response["status"],
                 "detail": "Payment verification failed.",
                 "error": zarrinpal_response.get("error"),
             }, response_status
@@ -339,6 +341,7 @@ class PaymentViewSet(viewsets.ViewSet):
                     payment.user.accessories.add(*payment.accessories.all())
 
         return payment, {
+            "status": "success",
             "detail": "Payment verified successfully.",
             "ref_id": payment.ref_id,
             "card_pan": payment.card_pan,

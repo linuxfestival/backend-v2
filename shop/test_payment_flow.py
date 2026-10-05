@@ -147,6 +147,15 @@ class PaymentFlowTests(APITestCase):
         self.assertEqual(payment.ref_id, "REF123")
         self.assertEqual(self.participation.payment_state, "COMPLETED")
 
+        verify_response = self.client.post(
+            reverse("payment-verify"),
+            {"authority": payment.authority},
+            format="json",
+        )
+        self.assertEqual(verify_response.status_code, 200)
+        self.assertEqual(verify_response.data["status"], "success")
+        self.assertEqual(verify_response.data["ref_id"], "REF123")
+
     @patch("shop.views.ZarrinPal.verify_payment")
     def test_callback_preserves_gateway_ok_for_retryable_verification(self, verify_payment):
         payment = Payment.objects.create(
