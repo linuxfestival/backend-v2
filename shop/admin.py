@@ -46,6 +46,7 @@ class PresentationAdmin(admin.ModelAdmin):
             mobiles = {
                 str(participation.user.phone_number)
                 for participation in Participation.objects.filter(
+                    presentation=presentation,
                     payment_state="COMPLETED",
                 )
             }
@@ -64,7 +65,10 @@ class PresentationAdmin(admin.ModelAdmin):
 
         for presentation in queryset:
             data[presentation.en_title] = {}
-            for participation in Participation.objects.filter(payment_state="COMPLETED"):
+            for participation in Participation.objects.filter(
+                presentation=presentation,
+                payment_state="COMPLETED",
+            ):
                 user = participation.user
                 data[presentation.en_title][user.phone_number] = {
                     'name': user.first_name + " " + user.last_name,

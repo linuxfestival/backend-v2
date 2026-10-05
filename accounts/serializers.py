@@ -47,6 +47,11 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             is_active=not settings.EMAIL_VERIFICATION_ENABLED,
         )
 
+    def update(self, instance, validated_data):
+        # An unverified signup retry is only used to resend verification. Do
+        # not let knowledge of an email address replace account credentials.
+        return instance
+
 
 class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
     default_error_messages = {
