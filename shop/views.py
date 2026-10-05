@@ -359,14 +359,25 @@ class PaymentViewSet(viewsets.ViewSet):
     @action(methods=['get'], detail=False, permission_classes=[], url_path='provider-callback')
     def provider_callback(self, request):
         authority = request.query_params.get("Authority")
+        gateway_status = request.query_params.get("Status")
         payment = None
         response_status = status.HTTP_400_BAD_REQUEST
         if authority:
             payment, _payload, response_status = self._verify_authority(authority)
 
+        # If the gateway reported success but our verification request had a
+        # temporary transport/provider failure, preserve OK so the frontend
+        # performs its own verification retry. It only displays success after
+        # that API call succeeds. Explicit provider rejection remains NOK.
+        retryable_verification = (
+            gateway_status == "OK"
+            and response_status == status.HTTP_502_BAD_GATEWAY
+        )
         query = {
             "Authority": authority or "",
-            "Status": "OK" if response_status == status.HTTP_200_OK else "NOK",
+            "Status": "OK" if (
+                response_status == status.HTTP_200_OK or retryable_verification
+            ) else "NOK",
         }
         if payment and payment.ref_id:
             query["RefID"] = payment.ref_id

@@ -147,6 +147,33 @@ class PaymentFlowTests(APITestCase):
         self.assertEqual(payment.ref_id, "REF123")
         self.assertEqual(self.participation.payment_state, "COMPLETED")
 
+    @patch("shop.views.ZarrinPal.verify_payment")
+    def test_callback_preserves_gateway_ok_for_retryable_verification(self, verify_payment):
+        payment = Payment.objects.create(
+            user=self.user,
+            total_price=Decimal("10000.00"),
+            authority="RETRYABLE123",
+        )
+        payment.participations.add(self.participation)
+        verify_payment.return_value = {
+            "status": "unexpected",
+            "ref_id": None,
+            "card_pan": None,
+            "error": "Temporary provider timeout",
+        }
+
+        self.client.force_authenticate(user=None)
+        response = self.client.get(
+            reverse("payment-provider-callback"),
+            {"Authority": payment.authority, "Status": "OK"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        target = urlparse(response["Location"])
+        self.assertEqual(parse_qs(target.query)["Status"], ["OK"])
+        payment.refresh_from_db()
+        self.assertEqual(payment.payment_state, "PENDING")
+
     def test_remove_accepts_presentation_id(self):
         self.participation.delete()
         participation = Participation.objects.create(
