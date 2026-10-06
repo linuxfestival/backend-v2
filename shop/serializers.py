@@ -8,9 +8,12 @@ class PresenterSerializer(serializers.ModelSerializer):
         fields = ['first_name', 'last_name', 'email', 'description', 'avatar', 'linkedin']
 
 class PresentationTagSerializer(serializers.ModelSerializer):
+    # Keep the legacy field until all deployed frontend clients use en_name.
+    name = serializers.CharField(source='en_name', read_only=True)
+
     class Meta:
         model = PresentationTag
-        fields = ['name', 'color']
+        fields = ['name', 'en_name', 'fa_name', 'color']
 
 class PresentationSerializer(serializers.ModelSerializer):
     remained_capacity = serializers.SerializerMethodField()

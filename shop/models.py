@@ -36,11 +36,12 @@ class Presenter(models.Model):
         return f'{self.last_name} {self.first_name}'
 
 class PresentationTag(models.Model):
-    name = models.CharField(max_length=63)
+    en_name = models.CharField(max_length=63)
+    fa_name = models.CharField(max_length=63)
     color = ColorField(default="#FA175C")
 
     def __str__(self):
-        return self.name
+        return f"{self.fa_name} / {self.en_name}"
 
 
 class Presentation(models.Model):

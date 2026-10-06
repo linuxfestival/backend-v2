@@ -6,7 +6,12 @@ from accounts.sms import SMS_EXECUTOR, send_sms
 from shop.models import Presenter, Presentation, Participation, Coupon, Payment, PresentationTag
 
 admin.site.register(Presenter)
-admin.site.register(PresentationTag)
+
+
+@admin.register(PresentationTag)
+class PresentationTagAdmin(admin.ModelAdmin):
+    list_display = ('en_name', 'fa_name', 'color')
+    search_fields = ('en_name', 'fa_name')
 
 @admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):

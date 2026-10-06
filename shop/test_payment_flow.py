@@ -11,8 +11,8 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from accounts.models import Accessory, User
-from shop.models import Coupon, Payment, Presentation, Participation
-from shop.serializers import CouponSerializer
+from shop.models import Coupon, Payment, Presentation, PresentationTag, Participation
+from shop.serializers import CouponSerializer, PresentationTagSerializer
 from shop.payments import ZarrinPal
 
 
@@ -260,6 +260,24 @@ class PaymentFlowTests(APITestCase):
 
 
 class ShopValidationTests(TestCase):
+    def test_presentation_tag_exposes_both_languages_and_legacy_name(self):
+        tag = PresentationTag.objects.create(
+            en_name="Beginner",
+            fa_name="مبتدی",
+            color="#9B85FA",
+        )
+
+        data = PresentationTagSerializer(tag).data
+
+        self.assertEqual(data["name"], "Beginner")
+        self.assertEqual(data["en_name"], "Beginner")
+        self.assertEqual(data["fa_name"], "مبتدی")
+
+    def test_presentation_tag_requires_both_languages(self):
+        tag = PresentationTag(en_name="Beginner", fa_name="")
+        with self.assertRaises(ValidationError):
+            tag.full_clean()
+
     def test_negative_capacity_is_rejected(self):
         start = timezone.now() + timedelta(days=1)
         presentation = Presentation(
