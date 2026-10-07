@@ -339,6 +339,46 @@ class PaymentFlowTests(APITestCase):
         self.assertIn("does not apply", response.data["detail"])
         self.assertFalse(Payment.objects.exists())
 
+    def test_scoped_coupon_validation_requires_an_eligible_cart_item(self):
+        start = timezone.now() + timedelta(days=30)
+        other_presentation = Presentation.objects.create(
+            service_type="WORKSHOP",
+            en_title="Coupon validation workshop",
+            fa_title="کارگاه اعتبارسنجی کد",
+            start=start,
+            end=start + timedelta(hours=1),
+            en_description="Test",
+            fa_description="Test",
+            capacity=10,
+            cost=Decimal("10000.00"),
+        )
+        coupon = Coupon.objects.create(name="VALIDATECART", count=5, percentage=50)
+        coupon.eligible_presentations.add(other_presentation)
+
+        without_item = self.client.get(reverse("coupon-detail", args=[coupon.pk]))
+
+        self.assertEqual(without_item.status_code, 200)
+        self.assertFalse(without_item.data["is_valid"])
+
+        Participation.objects.create(
+            user=self.user,
+            presentation=other_presentation,
+        )
+        with_item = self.client.get(reverse("coupon-detail", args=[coupon.pk]))
+
+        self.assertEqual(with_item.status_code, 200)
+        self.assertTrue(with_item.data["is_valid"])
+
+    def test_anonymous_user_cannot_validate_a_scoped_coupon(self):
+        coupon = Coupon.objects.create(name="PRIVATECART", count=5, percentage=50)
+        coupon.eligible_presentations.add(self.presentation)
+        self.client.force_authenticate(user=None)
+
+        response = self.client.get(reverse("coupon-detail", args=[coupon.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["is_valid"])
+
     @patch("shop.views.ZarrinPal.create_payment")
     @patch("shop.views.ZarrinPal.verify_payment")
     def test_capacity_preserving_coupon_does_not_consume_a_seat(
