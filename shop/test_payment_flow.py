@@ -11,8 +11,8 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from accounts.models import Accessory, User
-from shop.models import Coupon, Payment, Presentation, Participation
-from shop.serializers import CouponSerializer
+from shop.models import Coupon, Payment, Presentation, PresentationTag, Participation
+from shop.serializers import CouponSerializer, PresentationTagSerializer
 from shop.payments import ZarrinPal
 
 
@@ -147,6 +147,42 @@ class PaymentFlowTests(APITestCase):
         self.assertEqual(payment.ref_id, "REF123")
         self.assertEqual(self.participation.payment_state, "COMPLETED")
 
+        verify_response = self.client.post(
+            reverse("payment-verify"),
+            {"authority": payment.authority},
+            format="json",
+        )
+        self.assertEqual(verify_response.status_code, 200)
+        self.assertEqual(verify_response.data["status"], "success")
+        self.assertEqual(verify_response.data["ref_id"], "REF123")
+
+    @patch("shop.views.ZarrinPal.verify_payment")
+    def test_callback_preserves_gateway_ok_for_retryable_verification(self, verify_payment):
+        payment = Payment.objects.create(
+            user=self.user,
+            total_price=Decimal("10000.00"),
+            authority="RETRYABLE123",
+        )
+        payment.participations.add(self.participation)
+        verify_payment.return_value = {
+            "status": "unexpected",
+            "ref_id": None,
+            "card_pan": None,
+            "error": "Temporary provider timeout",
+        }
+
+        self.client.force_authenticate(user=None)
+        response = self.client.get(
+            reverse("payment-provider-callback"),
+            {"Authority": payment.authority, "Status": "OK"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        target = urlparse(response["Location"])
+        self.assertEqual(parse_qs(target.query)["Status"], ["OK"])
+        payment.refresh_from_db()
+        self.assertEqual(payment.payment_state, "PENDING")
+
     def test_remove_accepts_presentation_id(self):
         self.participation.delete()
         participation = Participation.objects.create(
@@ -222,8 +258,205 @@ class PaymentFlowTests(APITestCase):
 
         self.assertEqual(self.presentation.get_remained_capacity(), 0)
 
+    @patch("shop.views.ZarrinPal.create_payment")
+    def test_scoped_coupon_discounts_only_selected_presentations(self, create_payment):
+        self.presentation.cost = Decimal("10000.00")
+        self.presentation.save(update_fields=["cost"])
+        start = timezone.now() + timedelta(days=30)
+        other_presentation = Presentation.objects.create(
+            service_type="WORKSHOP",
+            en_title="Unrelated workshop",
+            fa_title="کارگاه نامرتبط",
+            start=start,
+            end=start + timedelta(hours=1),
+            en_description="Test",
+            fa_description="Test",
+            capacity=10,
+            cost=Decimal("20000.00"),
+        )
+        other_participation = Participation.objects.create(
+            user=self.user,
+            presentation=other_presentation,
+        )
+        accessory = Accessory.objects.create(
+            name="Unrelated accessory",
+            description="Must not receive the scoped discount",
+            price=Decimal("3000.00"),
+            img="unrelated-accessory.png",
+            is_active=True,
+        )
+        coupon = Coupon.objects.create(name="TARGET50", count=5, percentage=50)
+        coupon.eligible_presentations.add(self.presentation)
+        create_payment.return_value = {
+            "status": "success",
+            "authority": "SCOPED123",
+            "link": "https://ceit-ssc.ir/payment/start?gateway=scoped",
+        }
+
+        response = self.client.post(
+            reverse("payment-pay-all"),
+            {"coupon": coupon.pk, "accessories": [accessory.pk]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        create_payment.assert_called_once_with(
+            amount=Decimal("28000.00"),
+            mobile=self.user.phone_number,
+            email=self.user.email,
+        )
+        payment = Payment.objects.get(authority="SCOPED123")
+        self.assertEqual(payment.total_price, Decimal("28000.00"))
+        self.assertSetEqual(
+            set(payment.coupon_participations.all()),
+            {self.participation},
+        )
+        self.assertNotIn(other_participation, payment.coupon_participations.all())
+
+    def test_scoped_coupon_is_rejected_without_an_eligible_cart_item(self):
+        start = timezone.now() + timedelta(days=30)
+        other_presentation = Presentation.objects.create(
+            service_type="WORKSHOP",
+            en_title="Coupon-only workshop",
+            fa_title="کارگاه مخصوص کد",
+            start=start,
+            end=start + timedelta(hours=1),
+            en_description="Test",
+            fa_description="Test",
+            capacity=10,
+            cost=Decimal("10000.00"),
+        )
+        coupon = Coupon.objects.create(name="OTHERONLY", count=5, percentage=50)
+        coupon.eligible_presentations.add(other_presentation)
+
+        response = self.client.post(
+            reverse("payment-pay-all"),
+            {"coupon": coupon.pk},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("does not apply", response.data["detail"])
+        self.assertFalse(Payment.objects.exists())
+
+    @patch("shop.views.ZarrinPal.create_payment")
+    @patch("shop.views.ZarrinPal.verify_payment")
+    def test_capacity_preserving_coupon_does_not_consume_a_seat(
+        self,
+        verify_payment,
+        create_payment,
+    ):
+        self.presentation.capacity = 1
+        self.presentation.cost = Decimal("10000.00")
+        self.presentation.save(update_fields=["capacity", "cost"])
+        coupon = Coupon.objects.create(
+            name="GUEST50",
+            count=1,
+            percentage=50,
+            preserve_capacity=True,
+        )
+        coupon.eligible_presentations.add(self.presentation)
+        create_payment.return_value = {
+            "status": "success",
+            "authority": "GUEST123",
+            "link": "https://ceit-ssc.ir/payment/start?gateway=guest",
+        }
+        verify_payment.return_value = {
+            "status": "success",
+            "ref_id": "GUEST-REF",
+            "card_pan": "621986******1234",
+            "error": None,
+        }
+
+        checkout_response = self.client.post(
+            reverse("payment-pay-all"),
+            {"coupon": coupon.pk},
+            format="json",
+        )
+        payment = Payment.objects.get(authority="GUEST123")
+
+        self.assertEqual(checkout_response.status_code, 200)
+        self.assertTrue(payment.coupon_preserves_capacity)
+        self.assertEqual(self.presentation.get_remained_capacity(), 0)
+
+        verify_response = self.client.post(
+            reverse("payment-verify"),
+            {"authority": payment.authority},
+            format="json",
+        )
+
+        self.assertEqual(verify_response.status_code, 200)
+        self.participation.refresh_from_db()
+        coupon.refresh_from_db()
+        self.assertEqual(self.participation.payment_state, "COMPLETED")
+        self.assertTrue(self.participation.is_capacity_exempt)
+        self.assertEqual(self.presentation.get_remained_capacity(), 1)
+        self.assertEqual(coupon.count, 0)
+
+    def test_free_capacity_preserving_coupon_is_settled_immediately(self):
+        original_remaining = self.presentation.get_remained_capacity()
+        start = timezone.now() + timedelta(days=30)
+        other_presentation = Presentation.objects.create(
+            service_type="WORKSHOP",
+            en_title="Regular free workshop",
+            fa_title="کارگاه رایگان عادی",
+            start=start,
+            end=start + timedelta(hours=1),
+            en_description="Test",
+            fa_description="Test",
+            capacity=2,
+            cost=Decimal("0"),
+        )
+        other_participation = Participation.objects.create(
+            user=self.user,
+            presentation=other_presentation,
+        )
+        coupon = Coupon.objects.create(
+            name="FREEGUEST",
+            count=1,
+            percentage=100,
+            preserve_capacity=True,
+        )
+        coupon.eligible_presentations.add(self.presentation)
+
+        response = self.client.post(
+            reverse("payment-pay-all"),
+            {"coupon": coupon.pk},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.participation.refresh_from_db()
+        coupon.refresh_from_db()
+        self.assertEqual(self.participation.payment_state, "COMPLETED")
+        self.assertTrue(self.participation.is_capacity_exempt)
+        self.assertEqual(self.presentation.get_remained_capacity(), original_remaining)
+        other_participation.refresh_from_db()
+        self.assertEqual(other_participation.payment_state, "COMPLETED")
+        self.assertFalse(other_participation.is_capacity_exempt)
+        self.assertEqual(other_presentation.get_remained_capacity(), 1)
+        self.assertEqual(coupon.count, 0)
+
 
 class ShopValidationTests(TestCase):
+    def test_presentation_tag_exposes_both_languages_and_legacy_name(self):
+        tag = PresentationTag.objects.create(
+            en_name="Beginner",
+            fa_name="مبتدی",
+            color="#9B85FA",
+        )
+
+        data = PresentationTagSerializer(tag).data
+
+        self.assertEqual(data["name"], "Beginner")
+        self.assertEqual(data["en_name"], "Beginner")
+        self.assertEqual(data["fa_name"], "مبتدی")
+
+    def test_presentation_tag_requires_both_languages(self):
+        tag = PresentationTag(en_name="Beginner", fa_name="")
+        with self.assertRaises(ValidationError):
+            tag.full_clean()
+
     def test_negative_capacity_is_rejected(self):
         start = timezone.now() + timedelta(days=1)
         presentation = Presentation(
