@@ -188,6 +188,42 @@ class PaymentViewSet(viewsets.ViewSet):
             for item in Presentation.objects.select_for_update().filter(pk__in=presentation_ids)
         }
 
+        coupon = None
+        coupon_participations = []
+        coupon_presentation_ids = set()
+        if coupon_code:
+            coupon = (
+                Coupon.objects.select_for_update()
+                .filter(name=coupon_code, count__gt=0)
+                .first()
+            )
+            if not coupon:
+                return Response(
+                    {"detail": "کد تخفیف نامعتبر!"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            coupon_presentation_ids = set(
+                coupon.eligible_presentations.values_list("pk", flat=True)
+            )
+            coupon_participations = [
+                participation
+                for participation in participations
+                if (
+                    not coupon_presentation_ids
+                    or participation.presentation_id in coupon_presentation_ids
+                )
+            ]
+            if coupon_presentation_ids and not coupon_participations:
+                return Response(
+                    {"detail": "This coupon does not apply to any presentation in the cart."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        capacity_exempt_participation_ids = {
+            participation.pk for participation in coupon_participations
+        } if coupon and coupon.preserve_capacity else set()
+
         for participation in participations:
             presentation = locked_presentations[participation.presentation_id]
 
@@ -201,7 +237,10 @@ class PaymentViewSet(viewsets.ViewSet):
                 return Response({'detail': 'Registration is closed for this presentation.'},
                                 status=status.HTTP_400_BAD_REQUEST)
 
-            if presentation.get_remained_capacity() < 1:
+            if (
+                participation.pk not in capacity_exempt_participation_ids
+                and presentation.get_remained_capacity() < 1
+            ):
                 return Response(
                     {'detail': f'No remaining capacity for presentation {presentation.en_title}.'},
                     status=status.HTTP_400_BAD_REQUEST
@@ -218,19 +257,31 @@ class PaymentViewSet(viewsets.ViewSet):
             )
 
         presentation_total = sum(
-            (participation.presentation.cost for participation in participations),
+            (
+                locked_presentations[participation.presentation_id].cost
+                for participation in participations
+            ),
             Decimal("0"),
         )
         accessory_total = sum((accessory.price for accessory in accessories), Decimal("0"))
         total_price = presentation_total + accessory_total
 
-        coupon = None
-        if coupon_code:
-            coupon = Coupon.objects.select_for_update().filter(name=coupon_code, count__gt=0).first()
-            if not coupon:
-                return Response({"detail": "کد تخفیف نامعتبر!"},
-                                status=status.HTTP_400_BAD_REQUEST)
-            discount = (Decimal(coupon.percentage) / Decimal("100")) * total_price
+        if coupon:
+            if coupon_presentation_ids:
+                discountable_total = sum(
+                    (
+                        locked_presentations[participation.presentation_id].cost
+                        for participation in coupon_participations
+                    ),
+                    Decimal("0"),
+                )
+            else:
+                # An empty scope preserves the behavior of existing coupons:
+                # discount every presentation and accessory in the checkout.
+                discountable_total = total_price
+            discount = (
+                Decimal(coupon.percentage) / Decimal("100")
+            ) * discountable_total
             total_price -= discount
 
         total_price = max(total_price, Decimal("0")).quantize(
@@ -241,6 +292,10 @@ class PaymentViewSet(viewsets.ViewSet):
             user.accessories.add(*accessories)
             participation_queryset.update(payment_state="COMPLETED")
             if coupon:
+                if coupon.preserve_capacity:
+                    Participation.objects.filter(
+                        pk__in=capacity_exempt_participation_ids,
+                    ).update(is_capacity_exempt=True)
                 coupon.count -= 1
                 coupon.save(update_fields=["count"])
             return Response(None, status=status.HTTP_204_NO_CONTENT)
@@ -249,9 +304,11 @@ class PaymentViewSet(viewsets.ViewSet):
             user=user,
             total_price=total_price,
             coupon=coupon,
+            coupon_preserves_capacity=bool(coupon and coupon.preserve_capacity),
         )
         payment.participations.set(participations)
         payment.accessories.set(accessories)
+        payment.coupon_participations.set(coupon_participations)
 
         zarrinpal = ZarrinPal()
         zarrinpal_response = zarrinpal.create_payment(
@@ -333,6 +390,8 @@ class PaymentViewSet(viewsets.ViewSet):
                     payment.user.save(update_fields=["is_signed_up_for_competition"])
                 else:
                     payment.participations.update(payment_state="COMPLETED")
+                    if payment.coupon_preserves_capacity:
+                        payment.coupon_participations.update(is_capacity_exempt=True)
                     if payment.coupon_id:
                         coupon = Coupon.objects.select_for_update().get(pk=payment.coupon_id)
                         if coupon.count > 0:

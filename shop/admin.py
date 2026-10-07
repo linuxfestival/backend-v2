@@ -20,12 +20,14 @@ class PaymentAdmin(admin.ModelAdmin):
 @admin.register(Participation)
 class ParticipationAdmin(admin.ModelAdmin):
     search_fields = ['user__phone_number']
-    list_display = ['__str__','payment_state', 'presentation__cost']
+    list_display = ['__str__', 'payment_state', 'is_capacity_exempt', 'presentation__cost']
+    list_filter = ['payment_state', 'is_capacity_exempt']
 
 
 @admin.register(Coupon)
 class CouponAdmin(admin.ModelAdmin):
-    list_display = ('name', 'used')
+    list_display = ('name', 'percentage', 'count', 'preserve_capacity', 'used')
+    filter_horizontal = ('eligible_presentations',)
 
     def used(self, obj):
         return Payment.objects.filter(payment_state="COMPLETED", coupon=obj).count()

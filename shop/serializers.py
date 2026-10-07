@@ -54,7 +54,9 @@ class ParticipationSerializer(serializers.ModelSerializer):
 class CouponSerializer(serializers.ModelSerializer):
     is_valid = serializers.SerializerMethodField()
     class Meta:
-        fields = ['percentage', 'is_valid']
+        fields = [
+            'percentage', 'is_valid', 'eligible_presentations', 'preserve_capacity',
+        ]
         model = Coupon
 
     def get_is_valid(self, obj):
