@@ -16,9 +16,12 @@ class PresenterSerializer(serializers.ModelSerializer):
         fields = ['first_name', 'last_name', 'email', 'description', 'avatar', 'linkedin']
 
 class PresentationTagSerializer(serializers.ModelSerializer):
+    # Keep the legacy field until all deployed frontend clients use en_name.
+    name = serializers.CharField(source='en_name', read_only=True)
+
     class Meta:
         model = PresentationTag
-        fields = ['name', 'color']
+        fields = ['name', 'en_name', 'fa_name', 'color']
 
 class PresentationSerializer(serializers.ModelSerializer):
     remained_capacity = serializers.SerializerMethodField()
@@ -57,9 +60,11 @@ class ParticipationSerializer(serializers.ModelSerializer):
         model = Participation
 
 class CouponSerializer(serializers.ModelSerializer):
-    is_valid = serializers.BooleanField(default=False)
+    is_valid = serializers.SerializerMethodField()
     class Meta:
-        fields = ['percentage', 'is_valid']
+        fields = [
+            'percentage', 'is_valid', 'eligible_presentations', 'preserve_capacity',
+        ]
         model = Coupon
 
     def get_is_valid(self, obj):

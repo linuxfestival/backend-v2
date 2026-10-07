@@ -2,10 +2,9 @@ from enum import Enum
 
 from django.core.validators import RegexValidator
 from django.utils import timezone
-import uuid
 
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
-from django.contrib.auth.models import PermissionsMixin, AbstractUser
+from django.contrib.auth.models import PermissionsMixin
 
 from django.db import models
 from rest_framework.exceptions import ValidationError
@@ -22,10 +21,27 @@ class PhoneValidator(RegexValidator):
     regex = r'^(\+98|0)?9\d{9}$'
     message = "Phone number must be entered in the format: '+98----------' or '09---------'."
 
+
+class ReferralSource(models.TextChoices):
+    TELEGRAM = "telegram", "Telegram"
+    INSTAGRAM = "instagram", "Instagram"
+    LINKEDIN = "linkedin", "LinkedIn"
+    FRIENDS = "friends", "Friends / Word of Mouth"
+    UNIVERSITY = "university", "University / Posters"
+    HAMKARAN = "hamkaran", "Hamkaran System"
+    WEBSITE = "website", "LinuxFest Website / Search Engine"
+    OTHER = "other", "Other"
+
+
+class OTPPurpose(models.TextChoices):
+    EMAIL_VERIFICATION = "email_verification", "Email verification"
+    PASSWORD_RESET = "password_reset", "Password reset"
+
+
 class Accessory(models.Model):
     name = models.CharField(max_length=255)
     description = models.CharField(max_length=255)
-    price = models.FloatField(default=10000)
+    price = models.DecimalField(max_digits=12, decimal_places=2, default=10000)
     img = models.ImageField(default=None)
     is_active = models.BooleanField(default=True)
 
@@ -36,7 +52,8 @@ class Accessory(models.Model):
         return self.user_set.count()
 
 class UserManager(BaseUserManager):
-    def create_user(self, phone_number, password, first_name, last_name, email, **other_fields):
+    def create_user(self, email, password=None, phone_number=None, first_name=None,
+                    last_name=None, **other_fields):
         if not email:
             raise ValueError('You must provide an email address.')
 
@@ -56,7 +73,8 @@ class UserManager(BaseUserManager):
         user.save()
         return user
 
-    def create_superuser(self, phone_number, password, first_name, last_name, email, **other_fields):
+    def create_superuser(self, email, password=None, phone_number=None, first_name=None,
+                         last_name=None, **other_fields):
         other_fields.setdefault('is_staff', True)
         other_fields.setdefault('is_superuser', True)
         other_fields.setdefault('is_active', True)
@@ -67,7 +85,14 @@ class UserManager(BaseUserManager):
         if other_fields.get('is_superuser') is not True:
             raise ValueError('Superuser must be assigned to is_superuser=True.')
 
-        return self.create_user(phone_number, password, first_name, last_name, email, **other_fields)
+        return self.create_user(
+            email=email,
+            password=password,
+            phone_number=phone_number,
+            first_name=first_name,
+            last_name=last_name,
+            **other_fields,
+        )
 
 
 class User(AbstractBaseUser, PermissionsMixin):
@@ -84,24 +109,33 @@ class User(AbstractBaseUser, PermissionsMixin):
     avatar = models.ImageField(blank=True, null=True)
     last_login = models.DateTimeField(blank=True, null=True)
 
-    otp_code = models.CharField(max_length=64, blank=True, null=True)
+    otp_code = models.CharField(max_length=128, blank=True, null=True)
+    otp_purpose = models.CharField(max_length=32, choices=OTPPurpose.choices, blank=True)
+    otp_expires_at = models.DateTimeField(blank=True, null=True)
+    otp_attempts = models.PositiveSmallIntegerField(default=0)
     last_otp_sent = models.DateTimeField(blank=True, null=True)
 
     accessories = models.ManyToManyField(Accessory, "accessories", blank=True)
 
+    is_first_login = models.BooleanField(default=True)
+    heard_about_us = models.CharField(
+        max_length=50,
+        choices=ReferralSource.choices,
+        blank=True,
+        null=True,
+    )
+    university = models.CharField(max_length=150, blank=True, null=True)
+    hamkaran_announcement_consent = models.BooleanField(default=False)
+
     objects = UserManager()
-    USERNAME_FIELD = 'phone_number'
-    REQUIRED_FIELDS = ['first_name', 'last_name', 'email']
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = ['phone_number', 'first_name', 'last_name']
 
     def get_full_name(self):
         return self.first_name + ' ' + self.last_name
 
-    def generate_activation_code(self):
-        self.activation_code = str(uuid.uuid4().int)[:6]
-        self.save()
-
     def __str__(self):
-        return self.phone_number
+        return self.email
 
     def save(self, *args, **kwargs):
         if self.email:

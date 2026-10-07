@@ -15,7 +15,12 @@ from shop.models import (
 )
 
 admin.site.register(Presenter)
-admin.site.register(PresentationTag)
+
+
+@admin.register(PresentationTag)
+class PresentationTagAdmin(admin.ModelAdmin):
+    list_display = ('en_name', 'fa_name', 'color')
+    search_fields = ('en_name', 'fa_name')
 
 @admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):
@@ -24,12 +29,14 @@ class PaymentAdmin(admin.ModelAdmin):
 @admin.register(Participation)
 class ParticipationAdmin(admin.ModelAdmin):
     search_fields = ['user__phone_number']
-    list_display = ['__str__','payment_state', 'presentation__cost']
+    list_display = ['__str__', 'payment_state', 'is_capacity_exempt', 'presentation__cost']
+    list_filter = ['payment_state', 'is_capacity_exempt']
 
 
 @admin.register(Coupon)
 class CouponAdmin(admin.ModelAdmin):
-    list_display = ('name', 'used')
+    list_display = ('name', 'percentage', 'count', 'preserve_capacity', 'used')
+    filter_horizontal = ('eligible_presentations',)
 
     def used(self, obj):
         return Payment.objects.filter(payment_state="COMPLETED", coupon=obj).count()
@@ -55,6 +62,7 @@ class PresentationAdmin(admin.ModelAdmin):
             mobiles = {
                 str(participation.user.phone_number)
                 for participation in Participation.objects.filter(
+                    presentation=presentation,
                     payment_state="COMPLETED",
                 )
             }
@@ -73,7 +81,10 @@ class PresentationAdmin(admin.ModelAdmin):
 
         for presentation in queryset:
             data[presentation.en_title] = {}
-            for participation in Participation.objects.filter(payment_state="COMPLETED"):
+            for participation in Participation.objects.filter(
+                presentation=presentation,
+                payment_state="COMPLETED",
+            ):
                 user = participation.user
                 data[presentation.en_title][user.phone_number] = {
                     'name': user.first_name + " " + user.last_name,
