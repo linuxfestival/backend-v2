@@ -171,6 +171,7 @@ class PresentationProposalApiTests(APITestCase):
             last_name='Staff',
             email='restricted@example.com',
             is_staff=True,
+            is_active=True,
         )
         self.client.force_login(staff_without_permission)
         forbidden_response = self.client.get(download_url)
