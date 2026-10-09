@@ -97,6 +97,16 @@ class PresentationProposalApiTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('slides', response.data)
 
+    def test_slide_content_must_match_its_extension(self):
+        response = self.client.post(
+            self.url,
+            self.make_payload(slides_name='not-really-a-pdf.pdf', slides_content=b'not a pdf'),
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('slides', response.data)
+
     def test_slide_larger_than_20_mb_returns_field_error(self):
         oversized_file = b'x' * (20 * 1024 * 1024 + 1)
         response = self.client.post(
@@ -127,9 +137,57 @@ class PresentationProposalApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Taylor Example')
         self.assertContains(response, 'Download slides')
+        self.assertNotContains(response, '/media/presentation_proposals/')
+
+        download_url = reverse(
+            'admin:shop_presentationproposal_download',
+            args=[proposal.pk],
+        )
+        download_response = self.client.get(download_url)
+        self.assertEqual(download_response.status_code, 200)
+        self.assertEqual(
+            b''.join(download_response.streaming_content),
+            b'%PDF-1.4 proposal slides',
+        )
+
+        self.client.logout()
+        anonymous_response = self.client.get(download_url)
+        self.assertEqual(anonymous_response.status_code, 302)
+        self.assertIn('/admin/login/', anonymous_response['Location'])
+
+        staff_without_permission = get_user_model().objects.create_user(
+            phone_number='09000000003',
+            password='test-password',
+            first_name='Restricted',
+            last_name='Staff',
+            email='restricted@example.com',
+            is_staff=True,
+        )
+        self.client.force_login(staff_without_permission)
+        forbidden_response = self.client.get(download_url)
+        self.assertEqual(forbidden_response.status_code, 403)
 
     def test_anonymous_throttle_limits_submissions(self):
         self.client.defaults['REMOTE_ADDR'] = '198.51.100.10'
+
+        for _ in range(10):
+            response = self.client.post(self.url, self.make_payload(), format='multipart')
+            self.assertEqual(response.status_code, 201)
+
+        response = self.client.post(self.url, self.make_payload(), format='multipart')
+
+        self.assertEqual(response.status_code, 429)
+
+    def test_authenticated_user_cannot_bypass_submission_throttle(self):
+        user = get_user_model().objects.create_user(
+            phone_number='09000000002',
+            password='test-password',
+            first_name='Authenticated',
+            last_name='Submitter',
+            email='submitter@example.com',
+        )
+        self.client.force_authenticate(user)
+        self.client.defaults['REMOTE_ADDR'] = '198.51.100.11'
 
         for _ in range(10):
             response = self.client.post(self.url, self.make_payload(), format='multipart')

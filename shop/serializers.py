@@ -68,7 +68,24 @@ class CouponSerializer(serializers.ModelSerializer):
         model = Coupon
 
     def get_is_valid(self, obj):
-        return obj.is_valid()
+        if not obj.is_valid():
+            return False
+
+        eligible_presentation_ids = obj.eligible_presentations.values_list(
+            'pk', flat=True,
+        )
+        if not eligible_presentation_ids.exists():
+            return True
+
+        request = self.context.get('request')
+        if request is None or not request.user.is_authenticated:
+            return False
+
+        return Participation.objects.filter(
+            user=request.user,
+            payment_state='PENDING',
+            presentation_id__in=eligible_presentation_ids,
+        ).exists()
 
 
 

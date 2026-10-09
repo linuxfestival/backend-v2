@@ -23,6 +23,7 @@ PAYMENT_SETTINGS = {
     "PAYMENT_RETURN_URL": "https://linuxfest.ir/payment/perhaps",
     "PAYMENT_HTTP_CONNECT_TIMEOUT": 5.0,
     "PAYMENT_HTTP_READ_TIMEOUT": 15.0,
+    "PAYMENT_PENDING_TTL_SECONDS": 1800,
 }
 
 
@@ -212,7 +213,8 @@ class PaymentFlowTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(Participation.objects.filter(pk=participation.pk).exists())
 
-    def test_remove_rejects_item_with_payment_in_progress(self):
+    @patch("shop.views.ZarrinPal.verify_payment")
+    def test_remove_rejects_item_with_recent_payment_in_progress(self, verify_payment):
         payment = Payment.objects.create(
             user=self.user,
             total_price=Decimal("10000.00"),
@@ -225,6 +227,91 @@ class PaymentFlowTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, 409)
+        self.assertGreater(response.data["retry_after_seconds"], 0)
+        verify_payment.assert_not_called()
+        self.assertTrue(Participation.objects.filter(pk=self.participation.pk).exists())
+
+    @patch("shop.views.ZarrinPal.verify_payment")
+    def test_remove_reconciles_failed_stale_payment_then_deletes_item(self, verify_payment):
+        payment = Payment.objects.create(
+            user=self.user,
+            total_price=Decimal("10000.00"),
+            authority="REMOVEFAILED123",
+        )
+        payment.participations.add(self.participation)
+        Payment.objects.filter(pk=payment.pk).update(
+            created_date=timezone.now() - timedelta(minutes=31),
+        )
+        verify_payment.return_value = {
+            "status": "failed",
+            "ref_id": None,
+            "card_pan": None,
+            "error": "Payment was not completed",
+        }
+
+        response = self.client.delete(
+            reverse("presentation-remove-participation", args=[self.presentation.pk])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payment.refresh_from_db()
+        self.assertEqual(payment.payment_state, "FAILED")
+        self.assertFalse(Participation.objects.filter(pk=self.participation.pk).exists())
+
+    @patch("shop.views.ZarrinPal.verify_payment")
+    def test_remove_keeps_item_when_stale_payment_was_successful(self, verify_payment):
+        payment = Payment.objects.create(
+            user=self.user,
+            total_price=Decimal("10000.00"),
+            authority="REMOVESUCCESS123",
+        )
+        payment.participations.add(self.participation)
+        Payment.objects.filter(pk=payment.pk).update(
+            created_date=timezone.now() - timedelta(minutes=31),
+        )
+        verify_payment.return_value = {
+            "status": "success",
+            "ref_id": "PAID-REF-123",
+            "card_pan": "621986******1234",
+            "error": None,
+        }
+
+        response = self.client.delete(
+            reverse("presentation-remove-participation", args=[self.presentation.pk])
+        )
+
+        self.assertEqual(response.status_code, 409)
+        payment.refresh_from_db()
+        self.participation.refresh_from_db()
+        self.assertEqual(payment.payment_state, "COMPLETED")
+        self.assertEqual(self.participation.payment_state, "COMPLETED")
+        self.assertTrue(Participation.objects.filter(pk=self.participation.pk).exists())
+
+    @patch("shop.views.ZarrinPal.verify_payment")
+    def test_remove_keeps_item_when_provider_is_temporarily_unavailable(self, verify_payment):
+        payment = Payment.objects.create(
+            user=self.user,
+            total_price=Decimal("10000.00"),
+            authority="REMOVEUNKNOWN123",
+        )
+        payment.participations.add(self.participation)
+        Payment.objects.filter(pk=payment.pk).update(
+            created_date=timezone.now() - timedelta(minutes=31),
+        )
+        verify_payment.return_value = {
+            "status": "unexpected",
+            "ref_id": None,
+            "card_pan": None,
+            "error": "Temporary provider timeout",
+        }
+
+        response = self.client.delete(
+            reverse("presentation-remove-participation", args=[self.presentation.pk])
+        )
+
+        self.assertEqual(response.status_code, 503)
+        payment.refresh_from_db()
+        self.assertEqual(payment.payment_state, "PENDING")
         self.assertTrue(Participation.objects.filter(pk=self.participation.pk).exists())
 
     @patch("shop.views.ZarrinPal.create_payment")
@@ -245,6 +332,79 @@ class PaymentFlowTests(APITestCase):
         self.assertEqual(second.data["authority"], "REUSE123")
         self.assertEqual(create_payment.call_count, 1)
         self.assertEqual(Payment.objects.filter(user=self.user).count(), 1)
+
+    @patch("shop.views.ZarrinPal.create_payment")
+    @patch("shop.views.ZarrinPal.verify_payment")
+    def test_checkout_reconciles_failed_stale_payment_before_creating_another(
+        self,
+        verify_payment,
+        create_payment,
+    ):
+        self.presentation.cost = Decimal("10000.00")
+        self.presentation.save(update_fields=["cost"])
+        old_payment = Payment.objects.create(
+            user=self.user,
+            total_price=Decimal("10000.00"),
+            authority="OLDCHECKOUT123",
+            pay_link="https://ceit-ssc.ir/payment/start?gateway=old",
+        )
+        old_payment.participations.add(self.participation)
+        Payment.objects.filter(pk=old_payment.pk).update(
+            created_date=timezone.now() - timedelta(minutes=31),
+        )
+        verify_payment.return_value = {
+            "status": "failed",
+            "ref_id": None,
+            "card_pan": None,
+            "error": "Payment was not completed",
+        }
+        create_payment.return_value = {
+            "status": "success",
+            "authority": "NEWCHECKOUT123",
+            "link": "https://ceit-ssc.ir/payment/start?gateway=new",
+        }
+
+        response = self.client.post(reverse("payment-pay-all"), {}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["authority"], "NEWCHECKOUT123")
+        old_payment.refresh_from_db()
+        self.assertEqual(old_payment.payment_state, "FAILED")
+        self.assertTrue(Payment.objects.filter(authority="NEWCHECKOUT123").exists())
+
+    @patch("shop.views.ZarrinPal.create_payment")
+    @patch("shop.views.ZarrinPal.verify_payment")
+    def test_checkout_does_not_double_charge_a_successful_stale_payment(
+        self,
+        verify_payment,
+        create_payment,
+    ):
+        self.presentation.cost = Decimal("10000.00")
+        self.presentation.save(update_fields=["cost"])
+        old_payment = Payment.objects.create(
+            user=self.user,
+            total_price=Decimal("10000.00"),
+            authority="PAIDCHECKOUT123",
+        )
+        old_payment.participations.add(self.participation)
+        Payment.objects.filter(pk=old_payment.pk).update(
+            created_date=timezone.now() - timedelta(minutes=31),
+        )
+        verify_payment.return_value = {
+            "status": "success",
+            "ref_id": "PAID-CHECKOUT-REF",
+            "card_pan": "621986******1234",
+            "error": None,
+        }
+
+        response = self.client.post(reverse("payment-pay-all"), {}, format="json")
+
+        self.assertEqual(response.status_code, 409)
+        create_payment.assert_not_called()
+        old_payment.refresh_from_db()
+        self.participation.refresh_from_db()
+        self.assertEqual(old_payment.payment_state, "COMPLETED")
+        self.assertEqual(self.participation.payment_state, "COMPLETED")
 
     def test_started_payment_reserves_capacity(self):
         self.presentation.capacity = 1
@@ -338,6 +498,46 @@ class PaymentFlowTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("does not apply", response.data["detail"])
         self.assertFalse(Payment.objects.exists())
+
+    def test_scoped_coupon_validation_requires_an_eligible_cart_item(self):
+        start = timezone.now() + timedelta(days=30)
+        other_presentation = Presentation.objects.create(
+            service_type="WORKSHOP",
+            en_title="Coupon validation workshop",
+            fa_title="کارگاه اعتبارسنجی کد",
+            start=start,
+            end=start + timedelta(hours=1),
+            en_description="Test",
+            fa_description="Test",
+            capacity=10,
+            cost=Decimal("10000.00"),
+        )
+        coupon = Coupon.objects.create(name="VALIDATECART", count=5, percentage=50)
+        coupon.eligible_presentations.add(other_presentation)
+
+        without_item = self.client.get(reverse("coupon-detail", args=[coupon.pk]))
+
+        self.assertEqual(without_item.status_code, 200)
+        self.assertFalse(without_item.data["is_valid"])
+
+        Participation.objects.create(
+            user=self.user,
+            presentation=other_presentation,
+        )
+        with_item = self.client.get(reverse("coupon-detail", args=[coupon.pk]))
+
+        self.assertEqual(with_item.status_code, 200)
+        self.assertTrue(with_item.data["is_valid"])
+
+    def test_anonymous_user_cannot_validate_a_scoped_coupon(self):
+        coupon = Coupon.objects.create(name="PRIVATECART", count=5, percentage=50)
+        coupon.eligible_presentations.add(self.presentation)
+        self.client.force_authenticate(user=None)
+
+        response = self.client.get(reverse("coupon-detail", args=[coupon.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["is_valid"])
 
     @patch("shop.views.ZarrinPal.create_payment")
     @patch("shop.views.ZarrinPal.verify_payment")
@@ -504,3 +704,38 @@ class PaymentTestItemCommandTests(TestCase):
         items = Presentation.objects.filter(en_title="Payment Gateway Test Workshop")
         self.assertEqual(items.count(), 1)
         self.assertEqual(items.get().cost, Decimal("15000.00"))
+
+
+@override_settings(**PAYMENT_SETTINGS)
+class ReconcilePendingPaymentsCommandTests(TestCase):
+    @patch("shop.management.commands.reconcile_pending_payments.PaymentViewSet._verify_authority")
+    def test_only_stale_pending_payments_are_reconciled(self, verify_authority):
+        user = User.objects.create_user(
+            phone_number="09121111111",
+            password="test-password-123",
+            email="reconcile@example.com",
+            first_name="Reconcile",
+            last_name="Tester",
+        )
+        stale = Payment.objects.create(
+            user=user,
+            total_price=Decimal("10000.00"),
+            authority="STALECOMMAND123",
+        )
+        Payment.objects.filter(pk=stale.pk).update(
+            created_date=timezone.now() - timedelta(minutes=31),
+        )
+        Payment.objects.create(
+            user=user,
+            total_price=Decimal("10000.00"),
+            authority="RECENTCOMMAND123",
+        )
+        verify_authority.return_value = (
+            stale,
+            {"status": "failed"},
+            400,
+        )
+
+        call_command("reconcile_pending_payments", verbosity=0)
+
+        verify_authority.assert_called_once_with("STALECOMMAND123")

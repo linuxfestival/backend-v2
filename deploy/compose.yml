@@ -72,7 +72,9 @@ services:
                     "Effect": "Allow",
                     "Principal": "*",
                     "Action": ["s3:GetObject"],
-                    "Resource": [f"arn:aws:s3:::{bucket}/*"],
+                    "NotResource": [
+                        f"arn:aws:s3:::{bucket}/presentation_proposals/*",
+                    ],
                 }],
             }),
         )
@@ -128,6 +130,7 @@ services:
       PAYMENT_RETURN_URL: ${PAYMENT_RETURN_URL:-}
       PAYMENT_HTTP_CONNECT_TIMEOUT: ${PAYMENT_HTTP_CONNECT_TIMEOUT:-5}
       PAYMENT_HTTP_READ_TIMEOUT: ${PAYMENT_HTTP_READ_TIMEOUT:-15}
+      PAYMENT_PENDING_TTL_SECONDS: ${PAYMENT_PENDING_TTL_SECONDS:-1800}
       USE_S3: "True"
       BUCKET_ENDPOINT: http://minio:9000
       BUCKET_NAME: ${MINIO_BUCKET}
