@@ -2,6 +2,7 @@ from pathlib import Path
 
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied
+from django.db.models import Count, Sum
 from django.http import FileResponse, Http404, JsonResponse
 from django.template.defaultfilters import title
 from django.urls import path, reverse
@@ -28,7 +29,38 @@ class PresentationTagAdmin(admin.ModelAdmin):
 
 @admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):
-    search_fields = ['user__phone_number']
+    change_list_template = 'admin/shop/payment/change_list.html'
+    list_display = (
+        'id',
+        'user',
+        'total_price',
+        'payment_state',
+        'ref_id',
+        'created_date',
+        'verified_date',
+    )
+    list_filter = ('payment_state', 'created_date', 'verified_date')
+    search_fields = (
+        'user__phone_number',
+        'user__email',
+        'authority',
+        'ref_id',
+    )
+    date_hierarchy = 'created_date'
+
+    def changelist_view(self, request, extra_context=None):
+        response = super().changelist_view(request, extra_context=extra_context)
+        context = getattr(response, 'context_data', None)
+        if context and 'cl' in context:
+            # Use the changelist queryset so date filters and searches are
+            # reflected in the figures shown to an administrator.
+            context['completed_payment_summary'] = context['cl'].queryset.filter(
+                payment_state='COMPLETED',
+            ).aggregate(
+                count=Count('pk'),
+                total=Sum('total_price', default=0),
+            )
+        return response
 
 @admin.register(Participation)
 class ParticipationAdmin(admin.ModelAdmin):
