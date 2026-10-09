@@ -111,6 +111,7 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_THROTTLE_RATES': {
         'presentation_proposal': '10/hour',
+        'resume_upload': '10/hour',
     },
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DATETIME_FORMAT': "%Y-%m-%dT%H:%M:%S.%f%z",

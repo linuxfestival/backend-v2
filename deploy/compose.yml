@@ -74,6 +74,7 @@ services:
                     "Action": ["s3:GetObject"],
                     "NotResource": [
                         f"arn:aws:s3:::{bucket}/presentation_proposals/*",
+                        f"arn:aws:s3:::{bucket}/resumes/*",
                     ],
                 }],
             }),

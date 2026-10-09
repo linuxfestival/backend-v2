@@ -16,4 +16,5 @@ urlpatterns = [
                   path('token/access/', views.EmailTokenObtainPairView.as_view(), name='token'),
                   path('token/refresh/', TokenRefreshView.as_view(), name='refresh_token'),
                   path('token/blacklist/', token_blacklist, name='blacklist_token'),
+                  path('resume/upload/', views.ResumeUploadView.as_view(), name='resume-upload'),
               ] + router.urls

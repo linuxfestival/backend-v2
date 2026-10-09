@@ -5,10 +5,14 @@ import string
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.db import transaction
+from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import viewsets, mixins, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.decorators import action
-from rest_framework.permissions import BasePermission, IsAdminUser
+from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.permissions import BasePermission, IsAdminUser, IsAuthenticated
+from rest_framework.throttling import UserRateThrottle
+from rest_framework.views import APIView
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
@@ -16,13 +20,89 @@ from shop.models import Payment
 from shop.payments import ZarrinPal
 from . import serializers
 from .emailing import OTPError, OTPThrottled, send_otp, validate_otp
-from .models import OTPPurpose, User, Staff, FAQ, Accessory
+from .models import OTPPurpose, User, Staff, FAQ, Accessory, Resume
 from rest_framework.response import Response
 
 from .serializers import FAQSerializer, AccessorySerializer, ResetPasswordByAdminSerializer
 
 
 logger = logging.getLogger(__name__)
+
+
+class ResumeUploadThrottle(UserRateThrottle):
+    scope = "resume_upload"
+
+
+@extend_schema_view(
+    get=extend_schema(
+        responses={
+            200: serializers.ResumeSerializer,
+            404: OpenApiResponse(description="No resume has been submitted."),
+        },
+    ),
+    post=extend_schema(
+        request=serializers.ResumeUploadSerializer,
+        responses={
+            200: serializers.ResumeMutationResponseSerializer,
+            201: serializers.ResumeMutationResponseSerializer,
+            400: OpenApiResponse(description="The uploaded file failed validation."),
+            429: OpenApiResponse(description="The per-user upload rate limit was exceeded."),
+        },
+    ),
+    delete=extend_schema(responses={204: None, 404: OpenApiResponse(description="No resume found.")}),
+)
+class ResumeUploadView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def get_throttles(self):
+        if self.request.method == "POST":
+            return [ResumeUploadThrottle()]
+        return []
+
+    def get(self, request):
+        resume = Resume.objects.filter(user=request.user).first()
+        if resume is None:
+            return Response(
+                {"detail": "No resume has been submitted."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(serializers.ResumeSerializer(resume).data)
+
+    def post(self, request):
+        with transaction.atomic():
+            # Locking the user serializes two simultaneous uploads even when a
+            # resume row does not exist yet.
+            user = User.objects.select_for_update().get(pk=request.user.pk)
+            resume = Resume.objects.filter(user=user).first()
+            created = resume is None
+            upload = serializers.ResumeUploadSerializer(
+                resume,
+                data=request.data,
+                context={"request": request},
+            )
+            upload.is_valid(raise_exception=True)
+            resume = upload.save(user=user)
+
+        return Response(
+            {
+                "detail": "Resume uploaded successfully." if created else "Resume replaced successfully.",
+                "resume": serializers.ResumeSerializer(resume).data,
+            },
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+    def delete(self, request):
+        with transaction.atomic():
+            user = User.objects.select_for_update().get(pk=request.user.pk)
+            resume = Resume.objects.filter(user=user).first()
+            if resume is None:
+                return Response(
+                    {"detail": "No resume has been submitted."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            resume.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class EmailTokenObtainPairView(TokenObtainPairView):
