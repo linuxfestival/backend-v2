@@ -1,11 +1,14 @@
+from pathlib import Path
+
 from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
+from django.db import transaction
 from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import Accessory, FAQ, ReferralSource, Staff, User
+from .models import Accessory, FAQ, ReferralSource, Resume, Staff, User
 
 
 class AccessorySerializer(serializers.ModelSerializer):
@@ -140,6 +143,42 @@ class FAQSerializer(serializers.ModelSerializer):
 class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(required=True)
     new_password = serializers.CharField(required=True, validators=[validate_password])
+
+
+class ResumeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Resume
+        fields = ["id", "original_filename", "uploaded_at", "updated_at"]
+        read_only_fields = fields
+
+
+class ResumeUploadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Resume
+        fields = ["file"]
+        extra_kwargs = {"file": {"write_only": True}}
+
+    def _set_original_filename(self, validated_data):
+        filename = Path(validated_data["file"].name).name
+        validated_data["original_filename"] = filename[:255]
+
+    def create(self, validated_data):
+        self._set_original_filename(validated_data)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        old_storage = instance.file.storage
+        old_name = instance.file.name
+        self._set_original_filename(validated_data)
+        resume = super().update(instance, validated_data)
+        if old_name and old_name != resume.file.name:
+            transaction.on_commit(lambda: old_storage.delete(old_name))
+        return resume
+
+
+class ResumeMutationResponseSerializer(serializers.Serializer):
+    detail = serializers.CharField()
+    resume = ResumeSerializer()
 
 
 def tokens_for_user(user):
