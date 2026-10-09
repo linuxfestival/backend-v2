@@ -72,7 +72,9 @@ services:
                     "Effect": "Allow",
                     "Principal": "*",
                     "Action": ["s3:GetObject"],
-                    "Resource": [f"arn:aws:s3:::{bucket}/*"],
+                    "NotResource": [
+                        f"arn:aws:s3:::{bucket}/presentation_proposals/*",
+                    ],
                 }],
             }),
         )

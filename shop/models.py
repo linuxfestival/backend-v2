@@ -1,7 +1,10 @@
-from colorfield.fields import ColorField
 from datetime import timedelta
+from pathlib import Path
+from zipfile import BadZipFile, ZipFile
 
+from colorfield.fields import ColorField
 from django.core.exceptions import ValidationError
+from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
@@ -190,3 +193,63 @@ class Payment(models.Model):
 
     def __str__(self):
         return f'Payment {self.pk} - {self.user.phone_number} - {self.total_price}'
+
+
+MAX_PROPOSAL_SLIDE_SIZE = 20 * 1024 * 1024
+
+
+def validate_proposal_slide_size(value):
+    if value.size > MAX_PROPOSAL_SLIDE_SIZE:
+        raise ValidationError('Slides must be 20 MB or smaller.')
+
+
+def validate_proposal_slide_content(value):
+    """Reject files whose contents do not match their allowed extension."""
+    suffix = Path(value.name).suffix.lower()
+    try:
+        value.seek(0)
+        header = value.read(8)
+        if suffix == '.pdf':
+            valid = header.startswith(b'%PDF-')
+        elif suffix == '.ppt':
+            valid = header == b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1'
+        elif suffix == '.pptx':
+            value.seek(0)
+            try:
+                with ZipFile(value) as archive:
+                    names = set(archive.namelist())
+                    valid = {
+                        '[Content_Types].xml',
+                        'ppt/presentation.xml',
+                    }.issubset(names)
+            except (BadZipFile, OSError):
+                valid = False
+        else:
+            valid = False
+    finally:
+        value.seek(0)
+
+    if not valid:
+        raise ValidationError('The uploaded file content does not match its extension.')
+
+
+class PresentationProposal(models.Model):
+    full_name = models.CharField(max_length=255)
+    biography = models.TextField()
+    organization = models.CharField(max_length=255, blank=True)
+    phone_number = models.CharField(max_length=32)
+    topic = models.CharField(max_length=255)
+    abstract = models.TextField()
+    slides = models.FileField(
+        upload_to='presentation_proposals/',
+        blank=True,
+        validators=[
+            FileExtensionValidator(allowed_extensions=['pdf', 'ppt', 'pptx']),
+            validate_proposal_slide_size,
+            validate_proposal_slide_content,
+        ],
+    )
+    submitted_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f'{self.full_name} - {self.topic}'

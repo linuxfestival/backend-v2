@@ -1,9 +1,22 @@
+from pathlib import Path
+
 from django.contrib import admin
-from django.http import JsonResponse
+from django.core.exceptions import PermissionDenied
+from django.http import FileResponse, Http404, JsonResponse
 from django.template.defaultfilters import title
+from django.urls import path, reverse
+from django.utils.html import format_html
 
 from accounts.sms import SMS_EXECUTOR, send_sms
-from shop.models import Presenter, Presentation, Participation, Coupon, Payment, PresentationTag
+from shop.models import (
+    Presenter,
+    Presentation,
+    Participation,
+    Coupon,
+    Payment,
+    PresentationTag,
+    PresentationProposal,
+)
 
 admin.site.register(Presenter)
 
@@ -83,3 +96,53 @@ class PresentationAdmin(admin.ModelAdmin):
                 }
 
         return JsonResponse(data)
+
+
+@admin.register(PresentationProposal)
+class PresentationProposalAdmin(admin.ModelAdmin):
+    list_display = ('submitted_at', 'full_name', 'topic', 'phone_number')
+    list_filter = ('submitted_at',)
+    search_fields = ('full_name', 'organization', 'phone_number', 'topic')
+    readonly_fields = (
+        'full_name',
+        'biography',
+        'organization',
+        'phone_number',
+        'topic',
+        'abstract',
+        'submitted_at',
+        'slides_download_link',
+    )
+    fields = readonly_fields
+
+    def get_urls(self):
+        custom_urls = [
+            path(
+                '<path:object_id>/download-slides/',
+                self.admin_site.admin_view(self.download_slides),
+                name='shop_presentationproposal_download',
+            ),
+        ]
+        return custom_urls + super().get_urls()
+
+    def download_slides(self, request, object_id):
+        proposal = self.get_object(request, object_id)
+        if proposal is None or not proposal.slides:
+            raise Http404('Proposal slides were not found.')
+        if not self.has_view_or_change_permission(request, proposal):
+            raise PermissionDenied
+        return FileResponse(
+            proposal.slides.open('rb'),
+            as_attachment=True,
+            filename=Path(proposal.slides.name).name,
+        )
+
+    @admin.display(description='Slides')
+    def slides_download_link(self, obj):
+        if not obj or not obj.slides:
+            return 'No slides uploaded'
+        download_url = reverse(
+            'admin:shop_presentationproposal_download',
+            args=[obj.pk],
+        )
+        return format_html('<a href="{}">Download slides</a>', download_url)

@@ -5,6 +5,12 @@
 {$SITE_ADDRESS} {
     encode zstd gzip
 
+    # Proposal attachments contain personal information and must only be
+    # downloaded through the authenticated Django admin endpoint.
+    handle /media/presentation_proposals/* {
+        respond 404
+    }
+
     handle_path /media/* {
         rewrite * /{$MINIO_BUCKET}{uri}
         reverse_proxy minio:9000
