@@ -10,7 +10,7 @@ from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status, viewsets, mixins
 from rest_framework.decorators import action
 from rest_framework.generics import CreateAPIView, RetrieveAPIView
-from rest_framework.parsers import MultiPartParser
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
@@ -56,7 +56,7 @@ class ProposalSubmissionThrottle(SimpleRateThrottle):
 class PresentationProposalCreateView(CreateAPIView):
     serializer_class = PresentationProposalSerializer
     permission_classes = [AllowAny]
-    parser_classes = [MultiPartParser]
+    parser_classes = [JSONParser, FormParser, MultiPartParser]
     throttle_classes = [ProposalSubmissionThrottle]
 
     def create(self, request, *args, **kwargs):

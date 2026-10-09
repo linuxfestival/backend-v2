@@ -67,6 +67,15 @@ class PresentationProposalApiTests(APITestCase):
         proposal = PresentationProposal.objects.get()
         self.assertFalse(proposal.slides)
 
+    def test_proposal_without_slides_accepts_json(self):
+        payload = self.make_payload()
+        del payload['slides']
+
+        response = self.client.post(self.url, payload, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        self.assertFalse(PresentationProposal.objects.get().slides)
+
     def test_each_other_field_is_required(self):
         required_fields = (
             'full_name',
