@@ -1,7 +1,10 @@
 from colorfield.fields import ColorField
+from datetime import timedelta
+
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.conf import settings
+from django.utils import timezone
 from tinymce.models import HTMLField
 
 from accounts.models import Accessory
@@ -174,6 +177,16 @@ class Payment(models.Model):
     )
     accessories = models.ManyToManyField(Accessory, "payment_accessories")
     is_competition_payment = models.BooleanField(default=False)
+
+    def is_pending_expired(self, at=None):
+        """Return whether a started gateway payment needs reconciliation."""
+        if self.payment_state != "PENDING" or not self.authority:
+            return False
+        at = at or timezone.now()
+        expires_at = self.created_date + timedelta(
+            seconds=settings.PAYMENT_PENDING_TTL_SECONDS,
+        )
+        return expires_at <= at
 
     def __str__(self):
         return f'Payment {self.pk} - {self.user.phone_number} - {self.total_price}'

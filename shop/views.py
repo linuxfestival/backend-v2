@@ -77,16 +77,15 @@ class PresentationViewSet(RetrieveAPIView, viewsets.ViewSet):
 
     @extend_schema(responses={200: "detail"})
     @action(detail=True, methods=['delete'], permission_classes=[IsAuthenticated])
-    @transaction.atomic
     def remove_participation(self, request, pk=None):
         # The route is nested under presentations, while an older frontend
         # sent the participation id. Accept both during the migration period.
-        participation = Participation.objects.select_for_update().filter(
+        participation = Participation.objects.select_related("presentation").filter(
             presentation_id=pk,
             user=request.user,
         ).first()
         if participation is None:
-            participation = Participation.objects.select_for_update().filter(
+            participation = Participation.objects.select_related("presentation").filter(
                 id=pk,
                 user=request.user,
             ).first()
@@ -107,16 +106,72 @@ class PresentationViewSet(RetrieveAPIView, viewsets.ViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if participation.payments.filter(
+        pending_payments = list(participation.payments.filter(
             payment_state="PENDING",
             authority__isnull=False,
-        ).exists():
-            return Response(
-                {'detail': 'Cannot remove participation while its payment is in progress.'},
-                status=status.HTTP_409_CONFLICT,
-            )
+        ).order_by("created_date"))
+        now = timezone.now()
+        for payment in pending_payments:
+            if not payment.is_pending_expired(at=now):
+                retry_after = max(
+                    int(
+                        settings.PAYMENT_PENDING_TTL_SECONDS
+                        - (now - payment.created_date).total_seconds()
+                    ),
+                    1,
+                )
+                return Response(
+                    {
+                        'detail': 'Payment is still in progress. Try removing the item again shortly.',
+                        'retry_after_seconds': retry_after,
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
 
-        participation.delete()
+            _payment, _payload, response_status = PaymentViewSet._verify_authority(
+                payment.authority,
+            )
+            if response_status == status.HTTP_200_OK:
+                return Response(
+                    {'detail': 'Payment was confirmed; this purchased item cannot be removed.'},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            if response_status == status.HTTP_502_BAD_GATEWAY:
+                return Response(
+                    {
+                        'detail': (
+                            'The payment provider could not be reached. Nothing was removed; '
+                            'please try again shortly.'
+                        ),
+                    },
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+
+        # Lock and re-check after any provider request so a concurrent checkout
+        # cannot attach a new payment between reconciliation and deletion.
+        with transaction.atomic():
+            participation = Participation.objects.select_for_update().select_related(
+                "presentation",
+            ).filter(pk=participation.pk, user=request.user).first()
+            if participation is None:
+                return Response(
+                    {'detail': 'Participation has already been removed.'},
+                    status=status.HTTP_200_OK,
+                )
+            if participation.payment_state == "COMPLETED":
+                return Response(
+                    {'detail': 'Payment was confirmed; this purchased item cannot be removed.'},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            if participation.payments.filter(
+                payment_state="PENDING",
+                authority__isnull=False,
+            ).exists():
+                return Response(
+                    {'detail': 'Cannot remove participation while its payment is in progress.'},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            participation.delete()
 
         return Response({'detail': 'Participation removed successfully.'}, status=status.HTTP_200_OK)
 
@@ -128,8 +183,44 @@ class PresenterViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
 class PaymentViewSet(viewsets.ViewSet):
     @extend_schema(request=PayAllSerializer, responses={200: 'payment_url, authority'})
     @action(methods=['post'], detail=False, permission_classes=[IsAuthenticated])
-    @transaction.atomic
     def pay_all(self, request):
+        stale_payments = Payment.objects.filter(
+            user=request.user,
+            payment_state="PENDING",
+            is_competition_payment=False,
+            authority__isnull=False,
+            participations__payment_state="PENDING",
+        ).distinct().order_by("created_date")
+        now = timezone.now()
+        for payment in stale_payments:
+            if not payment.is_pending_expired(at=now):
+                continue
+            _payment, _payload, response_status = self._verify_authority(payment.authority)
+            if response_status == status.HTTP_200_OK:
+                return Response(
+                    {
+                        "detail": (
+                            "A previous payment was confirmed. Refresh the cart before "
+                            "starting another payment."
+                        ),
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+            if response_status == status.HTTP_502_BAD_GATEWAY:
+                return Response(
+                    {
+                        "detail": (
+                            "The payment provider could not be reached. No new payment was "
+                            "created; please try again shortly."
+                        ),
+                    },
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+
+        with transaction.atomic():
+            return self._pay_all_locked(request)
+
+    def _pay_all_locked(self, request):
         user = request.user
         serializer = PayAllSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -359,7 +450,10 @@ class PaymentViewSet(viewsets.ViewSet):
             # A transport/configuration failure is retryable. Only persist FAILED
             # when the provider explicitly rejects the verification.
             if zarrinpal_response["status"] == "failed":
-                Payment.objects.filter(pk=payment.pk).update(payment_state="FAILED")
+                Payment.objects.filter(
+                    pk=payment.pk,
+                    payment_state="PENDING",
+                ).update(payment_state="FAILED")
             response_status = (
                 status.HTTP_400_BAD_REQUEST
                 if zarrinpal_response["status"] == "failed"
