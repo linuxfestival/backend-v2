@@ -170,9 +170,9 @@ class Coupon(models.Model):
         default=1,
         validators=[MinValueValidator(1)],
         help_text=(
-            'Minimum number of presentations/workshops in the cart. Counts all '
-            'pending cart presentations, including those outside the coupon scope. '
-            'Accessories and previously purchased items do not count.'
+            'Minimum number of standalone presentations/workshops in the cart. Counts '
+            'pending standalone presentations, including those outside the coupon scope. '
+            'Accessories, bundle members, and previously purchased items do not count.'
         ),
     )
     eligible_presentations = models.ManyToManyField(

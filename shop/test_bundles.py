@@ -295,3 +295,34 @@ class BundleConcurrencyTests(TransactionTestCase):
         self.assertEqual(sorted(responses), [201, 409])
         self.assertEqual(BundleSelection.objects.count(), 1)
         self.assertEqual(Participation.objects.count(), 2)
+
+    @patch('shop.views.ZarrinPal.verify_payment')
+    @patch('shop.views.ZarrinPal.create_payment')
+    def test_verification_and_checkout_retry_do_not_deadlock(self, create, verify):
+        create.return_value = {
+            'status': 'success', 'authority': 'CONCURRENT-VERIFY',
+            'link': 'https://ceit-ssc.ir/payment/start?gateway=test',
+        }
+        verify.return_value = {'status': 'success', 'ref_id': 'CONFIRMED', 'card_pan': '1234'}
+        client = APIClient()
+        client.force_authenticate(self.users[0])
+        client.post(reverse('bundle-add-to-cart', args=[self.bundle.pk]))
+        self.assertEqual(client.post(reverse('payment-pay-all'), {}, format='json').status_code, 200)
+        barrier = Barrier(2)
+
+        def execute(endpoint, payload):
+            try:
+                client = APIClient()
+                client.force_authenticate(self.users[0])
+                barrier.wait(timeout=10)
+                return client.post(endpoint, payload, format='json').status_code
+            finally:
+                connections.close_all()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            checkout = executor.submit(execute, reverse('payment-pay-all'), {})
+            verification = executor.submit(execute, reverse('payment-verify'), {'authority': 'CONCURRENT-VERIFY'})
+            self.assertIn(checkout.result(timeout=20), [200, 400])
+            self.assertEqual(verification.result(timeout=20), 200)
+        self.assertEqual(Payment.objects.get().payment_state, 'COMPLETED')
+        self.assertEqual(Participation.objects.filter(payment_state='COMPLETED').count(), 2)

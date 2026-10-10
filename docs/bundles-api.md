@@ -21,7 +21,9 @@ or when any member is full, started, or closed for registration.
 Bundle responses include `id`, `name`, `description`, `price`, `original_price`,
 `tags`, `presentations`, `is_active`, `remaining_capacity`, `is_available`, and
 `unavailable_reason`. Both prices are Toman amounts. `original_price` is the sum
-of current individual prices. Do not offer purchase when `is_available` is false.
+of current individual prices. Disable the catalog's add-to-cart button when
+`is_available` is false. An existing gateway checkout remains payable even when
+its own reserved seats make the bundle appear sold out.
 Unavailable reasons: `inactive`, `insufficient_presentations`, `started`,
 `registration_closed`, `sold_out`.
 

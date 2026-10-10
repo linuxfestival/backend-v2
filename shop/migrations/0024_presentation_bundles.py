@@ -44,4 +44,16 @@ class Migration(migrations.Migration):
             name='bundle_snapshot',
             field=models.JSONField(blank=True, default=list),
         ),
+        migrations.AlterField(
+            model_name='coupon',
+            name='minimum_items',
+            field=models.PositiveIntegerField(
+                default=1, validators=[MinValueValidator(1)],
+                help_text=(
+                    'Minimum number of standalone presentations/workshops in the cart. Counts '
+                    'pending standalone presentations, including those outside the coupon scope. '
+                    'Accessories, bundle members, and previously purchased items do not count.'
+                ),
+            ),
+        ),
     ]

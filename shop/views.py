@@ -567,7 +567,10 @@ class PaymentViewSet(viewsets.ViewSet):
             # PostgreSQL cannot lock the nullable side of the outer join that
             # select_related("coupon") creates. Lock only the payment row; the
             # coupon is fetched and locked separately below when one exists.
-            payment = Payment.objects.select_for_update().select_related("user").get(pk=payment.pk)
+            # Checkout and cart changes lock the user first. Verification must
+            # follow the same order to avoid user/payment row-lock deadlocks.
+            User.objects.select_for_update().get(pk=payment.user_id)
+            payment = Payment.objects.select_for_update(of=('self',)).select_related("user").get(pk=payment.pk)
             if payment.payment_state != "COMPLETED":
                 payment.ref_id = zarrinpal_response["ref_id"]
                 payment.card_pan = zarrinpal_response["card_pan"]
