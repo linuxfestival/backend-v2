@@ -64,6 +64,7 @@ class CouponSerializer(serializers.ModelSerializer):
     class Meta:
         fields = [
             'percentage', 'is_valid', 'eligible_presentations', 'preserve_capacity',
+            'minimum_items',
         ]
         model = Coupon
 
@@ -71,13 +72,21 @@ class CouponSerializer(serializers.ModelSerializer):
         if not obj.is_valid():
             return False
 
+        request = self.context.get('request')
+        if obj.minimum_items > 1:
+            if request is None or not request.user.is_authenticated:
+                return False
+            if Participation.objects.filter(
+                user=request.user, payment_state='PENDING',
+            ).count() < obj.minimum_items:
+                return False
+
         eligible_presentation_ids = obj.eligible_presentations.values_list(
             'pk', flat=True,
         )
         if not eligible_presentation_ids.exists():
             return True
 
-        request = self.context.get('request')
         if request is None or not request.user.is_authenticated:
             return False
 
