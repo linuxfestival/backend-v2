@@ -58,6 +58,7 @@ class BundleCartSerializer(serializers.ModelSerializer):
 
 
 class BundleViewSet(viewsets.ReadOnlyModelViewSet):
+    lookup_value_regex = r'\d+'
     queryset = Bundle.objects.prefetch_related('presentations__presenters', 'presentations__tags', 'tags').order_by('pk')
     serializer_class = BundleSerializer
     permission_classes = [AllowAny]
