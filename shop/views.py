@@ -15,8 +15,8 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 
-from accounts.models import Accessory
-from .models import Presentation, Participation, Payment, Coupon, Presenter
+from accounts.models import Accessory, User
+from .models import Presentation, Participation, Payment, Coupon, Presenter, Bundle, BundleSelection
 from .payments import ZarrinPal
 from .serializers import PresentationSerializer, ParticipationSerializer, PayAllSerializer, PaymentVerifySerializer, \
     CartSerializer, PaymentListSerializer, CouponSerializer, PresenterSerializer, \
@@ -91,6 +91,7 @@ class PresentationViewSet(RetrieveAPIView, viewsets.ViewSet):
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     @transaction.atomic
     def add_participation(self, request, pk=None):
+        User.objects.select_for_update().get(pk=request.user.pk)
         try:
             presentation = Presentation.objects.select_for_update().get(id=pk)
         except Presentation.DoesNotExist:
@@ -143,6 +144,11 @@ class PresentationViewSet(RetrieveAPIView, viewsets.ViewSet):
                             status=status.HTTP_404_NOT_FOUND)
 
         presentation = participation.presentation
+        if participation.bundle_selection_id:
+            return Response(
+                {'detail': 'Remove this item using the bundle removal endpoint.', 'code': 'bundle_item'},
+                status=status.HTTP_409_CONFLICT,
+            )
         if presentation.start <= timezone.now():
             return Response(
                 {'detail': f'Cannot remove participation; presentation {presentation.en_title} has already started.'},
@@ -199,6 +205,7 @@ class PresentationViewSet(RetrieveAPIView, viewsets.ViewSet):
         # Lock and re-check after any provider request so a concurrent checkout
         # cannot attach a new payment between reconciliation and deletion.
         with transaction.atomic():
+            User.objects.select_for_update().get(pk=request.user.pk)
             participation = Participation.objects.select_for_update().select_related(
                 "presentation",
             ).filter(pk=participation.pk, user=request.user).first()
@@ -210,6 +217,11 @@ class PresentationViewSet(RetrieveAPIView, viewsets.ViewSet):
             if participation.payment_state == "COMPLETED":
                 return Response(
                     {'detail': 'Payment was confirmed; this purchased item cannot be removed.'},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            if participation.bundle_selection_id:
+                return Response(
+                    {'detail': 'Remove this item using the bundle removal endpoint.', 'code': 'bundle_item'},
                     status=status.HTTP_409_CONFLICT,
                 )
             if participation.payments.filter(
@@ -271,12 +283,13 @@ class PaymentViewSet(viewsets.ViewSet):
 
     def _pay_all_locked(self, request):
         user = request.user
+        User.objects.select_for_update().get(pk=user.pk)
         serializer = PayAllSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         coupon_code = serializer.validated_data.get('coupon', None)
         accessory_ids = serializer.validated_data.get('accessories', [])
 
-        participation_queryset = Participation.objects.select_for_update().filter(
+        participation_queryset = Participation.objects.select_for_update(of=('self',)).filter(
             user=user,
             payment_state="PENDING",
         ).select_related("presentation")
@@ -322,11 +335,34 @@ class PaymentViewSet(viewsets.ViewSet):
                 status=status.HTTP_409_CONFLICT,
             )
 
+        standalone = [item for item in participations if not item.bundle_selection_id]
+        selection_ids = {item.bundle_selection_id for item in participations if item.bundle_selection_id}
+        selections = list(BundleSelection.objects.filter(pk__in=selection_ids, user=user))
+        locked_bundles = {
+            bundle.pk: bundle for bundle in Bundle.objects.select_for_update().filter(
+                pk__in=[selection.bundle_id for selection in selections],
+            ).order_by('pk')
+        }
         presentation_ids = {item.presentation_id for item in participations}
         locked_presentations = {
             item.pk: item
-            for item in Presentation.objects.select_for_update().filter(pk__in=presentation_ids)
+            for item in Presentation.objects.select_for_update().filter(pk__in=presentation_ids).order_by('pk')
         }
+
+        bundle_snapshot = []
+        for selection in selections:
+            bundle = locked_bundles[selection.bundle_id]
+            current_ids = set(bundle.presentations.values_list('pk', flat=True))
+            cart_ids = {item.presentation_id for item in participations if item.bundle_selection_id == selection.pk}
+            if not bundle.is_active or len(current_ids) < 2 or current_ids != cart_ids:
+                return Response(
+                    {'detail': 'This bundle has changed or is unavailable. Remove it and add it again.', 'code': 'bundle_changed'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            bundle_snapshot.append({
+                'bundle_id': bundle.pk, 'name': bundle.name,
+                'price': str(bundle.price), 'presentation_ids': sorted(cart_ids),
+            })
 
         coupon = None
         coupon_participations = []
@@ -343,13 +379,13 @@ class PaymentViewSet(viewsets.ViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            if len(participations) < coupon.minimum_items:
+            if len(standalone) < coupon.minimum_items:
                 return Response(
                     {
                         'detail': f'This coupon requires at least {coupon.minimum_items} presentations/workshops in the cart.',
                         'code': 'coupon_minimum_items',
                         'minimum_items': coupon.minimum_items,
-                        'cart_items': len(participations),
+                        'cart_items': len(standalone),
                     },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
@@ -359,7 +395,7 @@ class PaymentViewSet(viewsets.ViewSet):
             )
             coupon_participations = [
                 participation
-                for participation in participations
+                for participation in standalone
                 if (
                     not coupon_presentation_ids
                     or participation.presentation_id in coupon_presentation_ids
@@ -410,12 +446,13 @@ class PaymentViewSet(viewsets.ViewSet):
         presentation_total = sum(
             (
                 locked_presentations[participation.presentation_id].cost
-                for participation in participations
+                for participation in standalone
             ),
             Decimal("0"),
         )
         accessory_total = sum((accessory.price for accessory in accessories), Decimal("0"))
-        total_price = presentation_total + accessory_total
+        bundle_total = sum((Decimal(item['price']) for item in bundle_snapshot), Decimal('0'))
+        total_price = presentation_total + accessory_total + bundle_total
 
         if coupon:
             if coupon_presentation_ids:
@@ -429,7 +466,7 @@ class PaymentViewSet(viewsets.ViewSet):
             else:
                 # An empty scope preserves the behavior of existing coupons:
                 # discount every presentation and accessory in the checkout.
-                discountable_total = total_price
+                discountable_total = presentation_total + accessory_total
             discount = (
                 Decimal(coupon.percentage) / Decimal("100")
             ) * discountable_total
@@ -456,6 +493,7 @@ class PaymentViewSet(viewsets.ViewSet):
             total_price=total_price,
             coupon=coupon,
             coupon_preserves_capacity=bool(coupon and coupon.preserve_capacity),
+            bundle_snapshot=bundle_snapshot,
         )
         payment.participations.set(participations)
         payment.accessories.set(accessories)
@@ -529,7 +567,10 @@ class PaymentViewSet(viewsets.ViewSet):
             # PostgreSQL cannot lock the nullable side of the outer join that
             # select_related("coupon") creates. Lock only the payment row; the
             # coupon is fetched and locked separately below when one exists.
-            payment = Payment.objects.select_for_update().select_related("user").get(pk=payment.pk)
+            # Checkout and cart changes lock the user first. Verification must
+            # follow the same order to avoid user/payment row-lock deadlocks.
+            User.objects.select_for_update().get(pk=payment.user_id)
+            payment = Payment.objects.select_for_update(of=('self',)).select_related("user").get(pk=payment.pk)
             if payment.payment_state != "COMPLETED":
                 payment.ref_id = zarrinpal_response["ref_id"]
                 payment.card_pan = zarrinpal_response["card_pan"]
