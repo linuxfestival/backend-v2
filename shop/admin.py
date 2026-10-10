@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from django import forms
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied
 from django.db.models import Count, Sum
@@ -17,9 +18,35 @@ from shop.models import (
     Payment,
     PresentationTag,
     PresentationProposal,
+    Bundle,
 )
 
 admin.site.register(Presenter)
+
+
+class BundleAdminForm(forms.ModelForm):
+    class Meta:
+        model = Bundle
+        fields = '__all__'
+
+    def clean_presentations(self):
+        items = self.cleaned_data['presentations']
+        if items.count() < 2:
+            raise forms.ValidationError('A bundle must contain at least two presentations/workshops.')
+        return items
+
+
+@admin.register(Bundle)
+class BundleAdmin(admin.ModelAdmin):
+    form = BundleAdminForm
+    list_display = ('name', 'price', 'is_active', 'remaining_capacity')
+    list_filter = ('is_active', 'tags')
+    search_fields = ('name',)
+    filter_horizontal = ('presentations', 'tags')
+
+    @admin.display(description='Remaining capacity')
+    def remaining_capacity(self, obj):
+        return obj.availability()[0]
 
 
 @admin.register(PresentationTag)

@@ -1,4 +1,5 @@
 from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
 from zipfile import BadZipFile, ZipFile
 
@@ -102,10 +103,48 @@ class Presentation(models.Model):
         return self.en_title
 
 
+class Bundle(models.Model):
+    name = models.CharField(max_length=150)
+    description = models.TextField(blank=True)
+    price = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal('0'))])
+    presentations = models.ManyToManyField(Presentation, related_name='bundles')
+    tags = models.ManyToManyField(PresentationTag, related_name='bundles', blank=True)
+    is_active = models.BooleanField(default=True)
+
+    def availability(self):
+        items = list(self.presentations.all())
+        if not self.is_active:
+            return 0, 'inactive'
+        if len(items) < 2:
+            return 0, 'insufficient_presentations'
+        if any(item.start <= timezone.now() for item in items):
+            return 0, 'started'
+        if any(not item.is_registration_active for item in items):
+            return 0, 'registration_closed'
+        remaining = min(item.get_remained_capacity() for item in items)
+        return remaining, None if remaining else 'sold_out'
+
+    def __str__(self):
+        return self.name
+
+
+class BundleSelection(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='bundle_selections')
+    bundle = models.ForeignKey(Bundle, on_delete=models.PROTECT, related_name='selections')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['user', 'bundle'], name='unique_user_bundle')]
+
+
 class Participation(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='participations')
     presentation = models.ForeignKey(Presentation, on_delete=models.CASCADE, related_name='participations')
     payment_state = models.CharField(choices=PAYMENT_STATES, default="PENDING", max_length=10)
+    bundle_selection = models.ForeignKey(
+        BundleSelection, null=True, blank=True, on_delete=models.RESTRICT,
+        related_name='participations',
+    )
     is_capacity_exempt = models.BooleanField(
         default=False,
         help_text="Completed registrations with this flag do not reduce remaining capacity.",
@@ -189,6 +228,7 @@ class Payment(models.Model):
     )
     accessories = models.ManyToManyField(Accessory, "payment_accessories")
     is_competition_payment = models.BooleanField(default=False)
+    bundle_snapshot = models.JSONField(default=list, blank=True)
 
     def is_pending_expired(self, at=None):
         """Return whether a started gateway payment needs reconciliation."""

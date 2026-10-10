@@ -48,7 +48,7 @@ class CartSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Participation
-        fields = ['id', 'presentation', 'payment_state', 'service_type']
+        fields = ['id', 'presentation', 'payment_state', 'service_type', 'bundle_selection']
         extra_kwargs = {'service_type': {'read_only': True}, 'payment_state': {'read_only': True}
                         , 'presentation': {'read_only': True}, 'id': {'read_only': True}}
 
@@ -77,7 +77,7 @@ class CouponSerializer(serializers.ModelSerializer):
             if request is None or not request.user.is_authenticated:
                 return False
             if Participation.objects.filter(
-                user=request.user, payment_state='PENDING',
+                user=request.user, payment_state='PENDING', bundle_selection__isnull=True,
             ).count() < obj.minimum_items:
                 return False
 
@@ -85,6 +85,10 @@ class CouponSerializer(serializers.ModelSerializer):
             'pk', flat=True,
         )
         if not eligible_presentation_ids.exists():
+            if request is not None and request.user.is_authenticated:
+                return Participation.objects.filter(
+                    user=request.user, payment_state='PENDING', bundle_selection__isnull=True,
+                ).exists()
             return True
 
         if request is None or not request.user.is_authenticated:
@@ -93,6 +97,7 @@ class CouponSerializer(serializers.ModelSerializer):
         return Participation.objects.filter(
             user=request.user,
             payment_state='PENDING',
+            bundle_selection__isnull=True,
             presentation_id__in=eligible_presentation_ids,
         ).exists()
 
