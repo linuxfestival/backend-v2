@@ -499,6 +499,62 @@ class PaymentFlowTests(APITestCase):
         self.assertIn("does not apply", response.data["detail"])
         self.assertFalse(Payment.objects.exists())
 
+    @patch('shop.views.ZarrinPal.create_payment')
+    def test_coupon_minimum_rejects_small_cart_without_starting_payment(self, create_payment):
+        coupon = Coupon.objects.create(
+            name='MINTHREE', count=5, percentage=50, minimum_items=3,
+        )
+        validation = self.client.get(reverse('coupon-detail', args=[coupon.pk]))
+        self.assertFalse(validation.data['is_valid'])
+        self.assertEqual(validation.data['minimum_items'], 3)
+
+        response = self.client.post(
+            reverse('payment-pay-all'), {'coupon': coupon.pk}, format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['code'], 'coupon_minimum_items')
+        self.assertEqual(response.data['cart_items'], 1)
+        self.assertFalse(Payment.objects.exists())
+        create_payment.assert_not_called()
+        coupon.refresh_from_db()
+        self.assertEqual(coupon.count, 5)
+
+    @patch('shop.views.ZarrinPal.create_payment')
+    def test_coupon_minimum_counts_mixed_cart_and_discounts_only_scoped_items(self, create_payment):
+        self.presentation.cost = Decimal('10000')
+        self.presentation.save(update_fields=['cost'])
+        coupon = Coupon.objects.create(
+            name='MIXEDTHREE', count=5, percentage=50, minimum_items=3,
+        )
+        coupon.eligible_presentations.add(self.presentation)
+        for index in range(2):
+            other = Presentation.objects.get(pk=self.presentation.pk)
+            other.pk = None
+            other.en_title = f'Other workshop {index}'
+            other.save()
+            Participation.objects.create(user=self.user, presentation=other)
+        create_payment.return_value = {
+            'status': 'success', 'authority': 'MINIMUM-THREE',
+            'link': 'https://ceit-ssc.ir/payment/start?gateway=test',
+        }
+        validation = self.client.get(reverse('coupon-detail', args=[coupon.pk]))
+        self.assertTrue(validation.data['is_valid'])
+        response = self.client.post(
+            reverse('payment-pay-all'), {'coupon': coupon.pk}, format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Payment.objects.get().total_price, Decimal('25000'))
+        self.assertEqual(Payment.objects.get().coupon_participations.count(), 1)
+
+    def test_completed_items_do_not_count_toward_coupon_minimum(self):
+        self.participation.payment_state = 'COMPLETED'
+        self.participation.save(update_fields=['payment_state'])
+        coupon = Coupon.objects.create(
+            name='PASTITEMS', count=5, percentage=50, minimum_items=2,
+        )
+        response = self.client.get(reverse('coupon-detail', args=[coupon.pk]))
+        self.assertFalse(response.data['is_valid'])
+
     def test_scoped_coupon_validation_requires_an_eligible_cart_item(self):
         start = timezone.now() + timedelta(days=30)
         other_presentation = Presentation.objects.create(

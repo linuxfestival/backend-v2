@@ -343,6 +343,17 @@ class PaymentViewSet(viewsets.ViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+            if len(participations) < coupon.minimum_items:
+                return Response(
+                    {
+                        'detail': f'This coupon requires at least {coupon.minimum_items} presentations/workshops in the cart.',
+                        'code': 'coupon_minimum_items',
+                        'minimum_items': coupon.minimum_items,
+                        'cart_items': len(participations),
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
             coupon_presentation_ids = set(
                 coupon.eligible_presentations.values_list("pk", flat=True)
             )

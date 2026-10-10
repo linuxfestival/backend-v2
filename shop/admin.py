@@ -71,7 +71,7 @@ class ParticipationAdmin(admin.ModelAdmin):
 
 @admin.register(Coupon)
 class CouponAdmin(admin.ModelAdmin):
-    list_display = ('name', 'percentage', 'count', 'preserve_capacity', 'used')
+    list_display = ('name', 'percentage', 'count', 'minimum_items', 'preserve_capacity', 'used')
     filter_horizontal = ('eligible_presentations',)
 
     def used(self, obj):

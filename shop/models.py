@@ -4,7 +4,7 @@ from zipfile import BadZipFile, ZipFile
 
 from colorfield.fields import ColorField
 from django.core.exceptions import ValidationError
-from django.core.validators import FileExtensionValidator
+from django.core.validators import FileExtensionValidator, MinValueValidator
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
@@ -127,6 +127,15 @@ class Coupon(models.Model):
     name = models.CharField(max_length=50, primary_key=True, help_text="Don't use / in the name.")
     count = models.PositiveIntegerField()
     percentage = models.IntegerField(default=0.0, help_text='Enter a number between 0 to 100.')
+    minimum_items = models.PositiveIntegerField(
+        default=1,
+        validators=[MinValueValidator(1)],
+        help_text=(
+            'Minimum number of presentations/workshops in the cart. Counts all '
+            'pending cart presentations, including those outside the coupon scope. '
+            'Accessories and previously purchased items do not count.'
+        ),
+    )
     eligible_presentations = models.ManyToManyField(
         Presentation,
         blank=True,
