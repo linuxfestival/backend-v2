@@ -65,8 +65,13 @@ class PaymentAdmin(admin.ModelAdmin):
         'ref_id',
         'created_date',
         'verified_date',
+        'superseded_at',
+        'requires_manual_review',
+        'review_resolved',
     )
-    list_filter = ('payment_state', 'created_date', 'verified_date')
+    list_filter = ('requires_manual_review', 'review_resolved', 'superseded_at', 'payment_state', 'created_date', 'verified_date')
+    readonly_fields = ('superseded_at', 'superseded_reason', 'checkout_snapshot',
+                       'requires_manual_review', 'last_reconciled_at')
     search_fields = (
         'user__phone_number',
         'user__email',
@@ -102,7 +107,7 @@ class CouponAdmin(admin.ModelAdmin):
     filter_horizontal = ('eligible_presentations',)
 
     def used(self, obj):
-        return Payment.objects.filter(payment_state="COMPLETED", coupon=obj).count()
+        return Payment.objects.filter(payment_state="COMPLETED", coupon=obj, requires_manual_review=False).count()
 
 
 @admin.register(Presentation)

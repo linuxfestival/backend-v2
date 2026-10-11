@@ -43,10 +43,10 @@ bundles are rejected with HTTP 409; `already_purchased` includes the overlapping
 `presentation_ids`. Individual removal of a bundled member returns 409 with code
 `bundle_item`; offer removal of the whole bundle instead.
 
-An active gateway payment prevents bundle removal or conversion of its items.
-After the payment's reservation expires, removal verifies its provider status:
-confirmed purchases cannot be removed; rejected payments can be removed; provider
-errors return 503 and preserve the cart. This matches individual cart behavior.
+An unpaid bundle can be removed or converted immediately. Cart changes retire
+old checkout links and release their reservations. Confirmed purchases cannot be
+removed. Payments later received on retired links are recorded for support
+review without fulfilling the old order. See [editable-checkouts.md](editable-checkouts.md).
 
 ## Checkout and purchase records
 

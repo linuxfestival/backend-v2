@@ -91,6 +91,7 @@ class Presentation(models.Model):
                 payment_state="PENDING",
                 payments__payment_state="PENDING",
                 payments__authority__isnull=False,
+                payments__superseded_at__isnull=True,
             )
         ).distinct().count()
         return max(self.capacity - committed, 0)
@@ -229,6 +230,13 @@ class Payment(models.Model):
     accessories = models.ManyToManyField(Accessory, "payment_accessories")
     is_competition_payment = models.BooleanField(default=False)
     bundle_snapshot = models.JSONField(default=list, blank=True)
+    checkout_snapshot = models.JSONField(default=dict, blank=True)
+    superseded_at = models.DateTimeField(null=True, blank=True)
+    superseded_reason = models.CharField(max_length=100, blank=True)
+    requires_manual_review = models.BooleanField(default=False)
+    review_resolved = models.BooleanField(default=False)
+    review_notes = models.TextField(blank=True, help_text='Support notes; changing this does not refund or fulfil a payment.')
+    last_reconciled_at = models.DateTimeField(null=True, blank=True)
 
     def is_pending_expired(self, at=None):
         """Return whether a started gateway payment needs reconciliation."""

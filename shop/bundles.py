@@ -8,8 +8,9 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from accounts.models import User
-from .models import Bundle, BundleSelection, Participation, Payment, Presentation
+from .models import Bundle, BundleSelection, Participation, Presentation
 from .serializers import PresentationSerializer, PresentationTagSerializer
+from .payment_lifecycle import atomic_cart_change, supersede_pending_payments
 
 
 class BundleSerializer(serializers.ModelSerializer):
@@ -73,7 +74,7 @@ class BundleViewSet(viewsets.ReadOnlyModelViewSet):
 
     @extend_schema(request=None, responses={201: BundleCartSerializer})
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
-    @transaction.atomic
+    @atomic_cart_change
     def add_to_cart(self, request, pk=None):
         User.objects.select_for_update().get(pk=request.user.pk)
         bundle = Bundle.objects.select_for_update().get(pk=self.get_object().pk)
@@ -84,9 +85,6 @@ class BundleViewSet(viewsets.ReadOnlyModelViewSet):
         # presentation rows in the same order as checkout for seat availability.
         ids = list(bundle.presentations.values_list('pk', flat=True))
         list(Presentation.objects.select_for_update().filter(pk__in=ids).order_by('pk'))
-        remaining, reason = bundle.availability()
-        if reason:
-            return Response({'detail': 'Bundle is unavailable.', 'code': reason}, status=400)
         existing = list(Participation.objects.select_for_update().filter(
             user=request.user, presentation_id__in=ids,
         ))
@@ -97,11 +95,10 @@ class BundleViewSet(viewsets.ReadOnlyModelViewSet):
         if any(item.bundle_selection_id for item in existing):
             return Response({'detail': 'This bundle overlaps a bundle already in your cart.',
                              'code': 'bundle_overlap'}, status=409)
-        if Payment.objects.filter(
-            participations__in=existing, payment_state='PENDING', authority__isnull=False,
-        ).exists():
-            return Response({'detail': 'Payment is in progress for an included item.',
-                             'code': 'active_payment'}, status=409)
+        supersede_pending_payments(request.user, 'bundle_added')
+        _, reason = bundle.availability()
+        if reason:
+            return Response({'detail': 'Bundle is unavailable.', 'code': reason}, status=400)
         selection = BundleSelection.objects.create(user=request.user, bundle=bundle)
         existing_ids = {item.presentation_id for item in existing}
         Participation.objects.filter(pk__in=[item.pk for item in existing]).update(
@@ -115,36 +112,21 @@ class BundleViewSet(viewsets.ReadOnlyModelViewSet):
 
     @extend_schema(responses={204: None})
     @action(detail=True, methods=['delete'], permission_classes=[IsAuthenticated])
+    @atomic_cart_change
     def remove_from_cart(self, request, pk=None):
         selection = BundleSelection.objects.filter(user=request.user, bundle_id=pk).first()
         if selection is None:
             return Response({'detail': 'Bundle not found in your cart.'}, status=404)
         if selection.participations.filter(payment_state='COMPLETED').exists():
             return Response({'detail': 'A purchased bundle cannot be removed.'}, status=409)
-        payments = Payment.objects.filter(
-            participations__bundle_selection=selection, payment_state='PENDING',
-            authority__isnull=False,
-        ).distinct().order_by('created_date')
-        # Match individual cart removal: reconcile expired provider payments
-        # before releasing seats, never discard an unverified successful payment.
-        from .views import PaymentViewSet
-        for payment in payments:
-            if not payment.is_pending_expired():
-                return Response({'detail': 'Payment is still in progress.', 'code': 'active_payment'}, status=409)
-            _, _, response_status = PaymentViewSet._verify_authority(payment.authority)
-            if response_status == status.HTTP_200_OK:
-                return Response({'detail': 'Payment confirmed; bundle cannot be removed.'}, status=409)
-            if response_status == status.HTTP_502_BAD_GATEWAY:
-                return Response({'detail': 'Payment provider unavailable. Try again shortly.'}, status=503)
+        supersede_pending_payments(request.user, 'bundle_removed')
         with transaction.atomic():
             User.objects.select_for_update().get(pk=request.user.pk)
             selection = BundleSelection.objects.filter(pk=selection.pk, user=request.user).first()
             if selection is None:
                 return Response(status=204)
             items = list(selection.participations.select_for_update())
-            if any(item.payment_state == 'COMPLETED' for item in items) or Payment.objects.filter(
-                participations__in=items, payment_state='PENDING', authority__isnull=False,
-            ).exists():
+            if any(item.payment_state == 'COMPLETED' for item in items):
                 return Response({'detail': 'A payment is in progress or completed.'}, status=409)
             selection.participations.all().delete()
             selection.delete()

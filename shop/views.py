@@ -18,6 +18,7 @@ from rest_framework.throttling import SimpleRateThrottle
 from accounts.models import Accessory, User
 from .models import Presentation, Participation, Payment, Coupon, Presenter, Bundle, BundleSelection
 from .payments import ZarrinPal
+from .payment_lifecycle import atomic_cart_change, snapshot_payment, supersede_pending_payments
 from .serializers import PresentationSerializer, ParticipationSerializer, PayAllSerializer, PaymentVerifySerializer, \
     CartSerializer, PaymentListSerializer, CouponSerializer, PresenterSerializer, \
     PresentationProposalSerializer, ProposalSubmissionResponseSerializer, \
@@ -89,7 +90,7 @@ class PresentationViewSet(RetrieveAPIView, viewsets.ViewSet):
 
     @extend_schema(responses={201: "detail"})
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
-    @transaction.atomic
+    @atomic_cart_change
     def add_participation(self, request, pk=None):
         User.objects.select_for_update().get(pk=request.user.pk)
         try:
@@ -117,6 +118,7 @@ class PresentationViewSet(RetrieveAPIView, viewsets.ViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        supersede_pending_payments(request.user, 'cart_item_added')
         participation = Participation.objects.create(
             user=request.user,
             presentation=presentation,
@@ -127,6 +129,7 @@ class PresentationViewSet(RetrieveAPIView, viewsets.ViewSet):
 
     @extend_schema(responses={200: "detail"})
     @action(detail=True, methods=['delete'], permission_classes=[IsAuthenticated])
+    @atomic_cart_change
     def remove_participation(self, request, pk=None):
         # The route is nested under presentations, while an older frontend
         # sent the participation id. Accept both during the migration period.
@@ -161,49 +164,7 @@ class PresentationViewSet(RetrieveAPIView, viewsets.ViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        pending_payments = list(participation.payments.filter(
-            payment_state="PENDING",
-            authority__isnull=False,
-        ).order_by("created_date"))
-        now = timezone.now()
-        for payment in pending_payments:
-            if not payment.is_pending_expired(at=now):
-                retry_after = max(
-                    int(
-                        settings.PAYMENT_PENDING_TTL_SECONDS
-                        - (now - payment.created_date).total_seconds()
-                    ),
-                    1,
-                )
-                return Response(
-                    {
-                        'detail': 'Payment is still in progress. Try removing the item again shortly.',
-                        'retry_after_seconds': retry_after,
-                    },
-                    status=status.HTTP_409_CONFLICT,
-                )
-
-            _payment, _payload, response_status = PaymentViewSet._verify_authority(
-                payment.authority,
-            )
-            if response_status == status.HTTP_200_OK:
-                return Response(
-                    {'detail': 'Payment was confirmed; this purchased item cannot be removed.'},
-                    status=status.HTTP_409_CONFLICT,
-                )
-            if response_status == status.HTTP_502_BAD_GATEWAY:
-                return Response(
-                    {
-                        'detail': (
-                            'The payment provider could not be reached. Nothing was removed; '
-                            'please try again shortly.'
-                        ),
-                    },
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
-                )
-
-        # Lock and re-check after any provider request so a concurrent checkout
-        # cannot attach a new payment between reconciliation and deletion.
+        supersede_pending_payments(request.user, 'cart_item_removed')
         with transaction.atomic():
             User.objects.select_for_update().get(pk=request.user.pk)
             participation = Participation.objects.select_for_update().select_related(
@@ -224,14 +185,6 @@ class PresentationViewSet(RetrieveAPIView, viewsets.ViewSet):
                     {'detail': 'Remove this item using the bundle removal endpoint.', 'code': 'bundle_item'},
                     status=status.HTTP_409_CONFLICT,
                 )
-            if participation.payments.filter(
-                payment_state="PENDING",
-                authority__isnull=False,
-            ).exists():
-                return Response(
-                    {'detail': 'Cannot remove participation while its payment is in progress.'},
-                    status=status.HTTP_409_CONFLICT,
-                )
             participation.delete()
 
         return Response({'detail': 'Participation removed successfully.'}, status=status.HTTP_200_OK)
@@ -244,42 +197,9 @@ class PresenterViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
 class PaymentViewSet(viewsets.ViewSet):
     @extend_schema(request=PayAllSerializer, responses={200: 'payment_url, authority'})
     @action(methods=['post'], detail=False, permission_classes=[IsAuthenticated])
+    @atomic_cart_change
     def pay_all(self, request):
-        stale_payments = Payment.objects.filter(
-            user=request.user,
-            payment_state="PENDING",
-            is_competition_payment=False,
-            authority__isnull=False,
-            participations__payment_state="PENDING",
-        ).distinct().order_by("created_date")
-        now = timezone.now()
-        for payment in stale_payments:
-            if not payment.is_pending_expired(at=now):
-                continue
-            _payment, _payload, response_status = self._verify_authority(payment.authority)
-            if response_status == status.HTTP_200_OK:
-                return Response(
-                    {
-                        "detail": (
-                            "A previous payment was confirmed. Refresh the cart before "
-                            "starting another payment."
-                        ),
-                    },
-                    status=status.HTTP_409_CONFLICT,
-                )
-            if response_status == status.HTTP_502_BAD_GATEWAY:
-                return Response(
-                    {
-                        "detail": (
-                            "The payment provider could not be reached. No new payment was "
-                            "created; please try again shortly."
-                        ),
-                    },
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
-                )
-
-        with transaction.atomic():
-            return self._pay_all_locked(request)
+        return self._pay_all_locked(request)
 
     def _pay_all_locked(self, request):
         user = request.user
@@ -299,41 +219,7 @@ class PaymentViewSet(viewsets.ViewSet):
                             status=status.HTTP_400_BAD_REQUEST)
 
         requested_accessory_ids = set(accessory_ids)
-        requested_participation_ids = {item.pk for item in participations}
-        # PostgreSQL does not allow SELECT DISTINCT together with FOR UPDATE.
-        # Resolve distinct ids in a subquery, then lock the payment rows in the
-        # outer query so concurrent checkout retries remain idempotent.
-        pending_payment_ids = Payment.objects.filter(
-            user=user,
-            payment_state="PENDING",
-            is_competition_payment=False,
-            authority__isnull=False,
-            participations__in=participations,
-        ).values_list("pk", flat=True).distinct()
-        pending_payments = list(
-            Payment.objects.select_for_update()
-            .filter(pk__in=pending_payment_ids)
-            .prefetch_related("participations", "accessories")
-            .order_by("-created_date")
-        )
-        for pending_payment in pending_payments:
-            same_checkout = (
-                {item.pk for item in pending_payment.participations.all()}
-                == requested_participation_ids
-                and {item.pk for item in pending_payment.accessories.all()}
-                == requested_accessory_ids
-                and pending_payment.coupon_id == (coupon_code or None)
-            )
-            if same_checkout:
-                return Response({
-                    "payment_url": pending_payment.pay_link,
-                    "authority": pending_payment.authority,
-                }, status=status.HTTP_200_OK)
-        if pending_payments:
-            return Response(
-                {"detail": "A payment is already in progress for an item in this cart."},
-                status=status.HTTP_409_CONFLICT,
-            )
+        supersede_pending_payments(user, 'new_checkout')
 
         standalone = [item for item in participations if not item.bundle_selection_id]
         selection_ids = {item.bundle_selection_id for item in participations if item.bundle_selection_id}
@@ -498,6 +384,8 @@ class PaymentViewSet(viewsets.ViewSet):
         payment.participations.set(participations)
         payment.accessories.set(accessories)
         payment.coupon_participations.set(coupon_participations)
+        payment.checkout_snapshot = snapshot_payment(payment)
+        payment.save(update_fields=['checkout_snapshot'])
 
         zarrinpal = ZarrinPal()
         zarrinpal_response = zarrinpal.create_payment(
@@ -525,6 +413,17 @@ class PaymentViewSet(viewsets.ViewSet):
             }, status=status.HTTP_502_BAD_GATEWAY)
 
     @staticmethod
+    def _review_response(payment):
+        return payment, {
+            'status': 'review_required',
+            'code': 'payment_requires_review',
+            'detail': 'Payment was received on an old checkout link. Contact support with this reference; do not pay again.',
+            'requires_manual_review': True,
+            'ref_id': payment.ref_id,
+            'amount': payment.total_price,
+        }, status.HTTP_409_CONFLICT
+
+    @staticmethod
     def _verify_authority(authority):
         try:
             payment = Payment.objects.select_related("user", "coupon").get(authority=authority)
@@ -532,6 +431,8 @@ class PaymentViewSet(viewsets.ViewSet):
             return None, {"detail": "Payment not found."}, status.HTTP_404_NOT_FOUND
 
         if payment.payment_state == "COMPLETED":
+            if payment.requires_manual_review:
+                return PaymentViewSet._review_response(payment)
             return payment, {
                 "status": "success",
                 "detail": "Payment has already been verified.",
@@ -540,6 +441,7 @@ class PaymentViewSet(viewsets.ViewSet):
                 "amount": payment.total_price,
             }, status.HTTP_200_OK
 
+        Payment.objects.filter(pk=payment.pk).update(last_reconciled_at=timezone.now())
         zarrinpal_response = ZarrinPal().verify_payment(
             authority=authority,
             amount=payment.total_price,
@@ -576,11 +478,16 @@ class PaymentViewSet(viewsets.ViewSet):
                 payment.card_pan = zarrinpal_response["card_pan"]
                 payment.payment_state = "COMPLETED"
                 payment.verified_date = timezone.now()
+                payment.requires_manual_review = payment.superseded_at is not None
                 payment.save(update_fields=[
-                    "ref_id", "card_pan", "payment_state", "verified_date",
+                    "ref_id", "card_pan", "payment_state", "verified_date", 'requires_manual_review',
                 ])
 
-                if payment.is_competition_payment:
+                if payment.requires_manual_review:
+                    # Money received is recorded, but the retired order must
+                    # never grant seats/accessories or consume a coupon.
+                    pass
+                elif payment.is_competition_payment:
                     payment.user.is_signed_up_for_competition = True
                     payment.user.save(update_fields=["is_signed_up_for_competition"])
                 else:
@@ -594,6 +501,8 @@ class PaymentViewSet(viewsets.ViewSet):
                             coupon.save(update_fields=["count"])
                     payment.user.accessories.add(*payment.accessories.all())
 
+        if payment.requires_manual_review:
+            return PaymentViewSet._review_response(payment)
         return payment, {
             "status": "success",
             "detail": "Payment verified successfully.",
@@ -638,6 +547,8 @@ class PaymentViewSet(viewsets.ViewSet):
         }
         if payment and payment.ref_id:
             query["RefID"] = payment.ref_id
+        if payment and payment.requires_manual_review:
+            query['ReviewRequired'] = '1'
         separator = "&" if "?" in settings.PAYMENT_RETURN_URL else "?"
         return redirect(f"{settings.PAYMENT_RETURN_URL}{separator}{urlencode(query)}")
 

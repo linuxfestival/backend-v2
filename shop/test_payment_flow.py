@@ -214,7 +214,7 @@ class PaymentFlowTests(APITestCase):
         self.assertFalse(Participation.objects.filter(pk=participation.pk).exists())
 
     @patch("shop.views.ZarrinPal.verify_payment")
-    def test_remove_rejects_item_with_recent_payment_in_progress(self, verify_payment):
+    def test_remove_retires_recent_payment_immediately(self, verify_payment):
         payment = Payment.objects.create(
             user=self.user,
             total_price=Decimal("10000.00"),
@@ -226,13 +226,15 @@ class PaymentFlowTests(APITestCase):
             reverse("presentation-remove-participation", args=[self.presentation.pk])
         )
 
-        self.assertEqual(response.status_code, 409)
-        self.assertGreater(response.data["retry_after_seconds"], 0)
+        self.assertEqual(response.status_code, 200)
         verify_payment.assert_not_called()
-        self.assertTrue(Participation.objects.filter(pk=self.participation.pk).exists())
+        self.assertFalse(Participation.objects.filter(pk=self.participation.pk).exists())
+        payment.refresh_from_db()
+        self.assertIsNotNone(payment.superseded_at)
+        self.assertEqual(payment.checkout_snapshot['presentations'][0]['id'], self.presentation.pk)
 
     @patch("shop.views.ZarrinPal.verify_payment")
-    def test_remove_reconciles_failed_stale_payment_then_deletes_item(self, verify_payment):
+    def test_remove_retires_stale_payment_without_gateway_request(self, verify_payment):
         payment = Payment.objects.create(
             user=self.user,
             total_price=Decimal("10000.00"),
@@ -255,11 +257,13 @@ class PaymentFlowTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         payment.refresh_from_db()
-        self.assertEqual(payment.payment_state, "FAILED")
+        self.assertEqual(payment.payment_state, "PENDING")
+        self.assertIsNotNone(payment.superseded_at)
+        verify_payment.assert_not_called()
         self.assertFalse(Participation.objects.filter(pk=self.participation.pk).exists())
 
     @patch("shop.views.ZarrinPal.verify_payment")
-    def test_remove_keeps_item_when_stale_payment_was_successful(self, verify_payment):
+    def test_removed_old_link_paid_later_is_flagged_without_fulfilling(self, verify_payment):
         payment = Payment.objects.create(
             user=self.user,
             total_price=Decimal("10000.00"),
@@ -280,15 +284,18 @@ class PaymentFlowTests(APITestCase):
             reverse("presentation-remove-participation", args=[self.presentation.pk])
         )
 
-        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Participation.objects.filter(pk=self.participation.pk).exists())
+        verified = self.client.post(reverse('payment-verify'), {'authority': payment.authority})
+        self.assertEqual(verified.status_code, 409)
+        self.assertEqual(verified.data['code'], 'payment_requires_review')
         payment.refresh_from_db()
-        self.participation.refresh_from_db()
         self.assertEqual(payment.payment_state, "COMPLETED")
-        self.assertEqual(self.participation.payment_state, "COMPLETED")
-        self.assertTrue(Participation.objects.filter(pk=self.participation.pk).exists())
+        self.assertTrue(payment.requires_manual_review)
+        self.assertEqual(payment.ref_id, 'PAID-REF-123')
 
     @patch("shop.views.ZarrinPal.verify_payment")
-    def test_remove_keeps_item_when_provider_is_temporarily_unavailable(self, verify_payment):
+    def test_remove_does_not_wait_for_unavailable_provider(self, verify_payment):
         payment = Payment.objects.create(
             user=self.user,
             total_price=Decimal("10000.00"),
@@ -309,29 +316,33 @@ class PaymentFlowTests(APITestCase):
             reverse("presentation-remove-participation", args=[self.presentation.pk])
         )
 
-        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.status_code, 200)
         payment.refresh_from_db()
         self.assertEqual(payment.payment_state, "PENDING")
-        self.assertTrue(Participation.objects.filter(pk=self.participation.pk).exists())
+        self.assertFalse(Participation.objects.filter(pk=self.participation.pk).exists())
+        verify_payment.assert_not_called()
 
     @patch("shop.views.ZarrinPal.create_payment")
-    def test_repeated_checkout_reuses_existing_payment(self, create_payment):
+    def test_repeated_checkout_creates_new_link_and_retires_previous(self, create_payment):
         self.presentation.cost = Decimal("10000.00")
         self.presentation.save(update_fields=["cost"])
-        create_payment.return_value = {
+        create_payment.side_effect = [{
             "status": "success",
             "authority": "REUSE123",
             "link": "https://ceit-ssc.ir/payment/start?gateway=test",
-        }
+        }, {'status': 'success', 'authority': 'FRESH123',
+             'link': 'https://ceit-ssc.ir/payment/start?gateway=fresh'}]
 
         first = self.client.post(reverse("payment-pay-all"), {}, format="json")
         second = self.client.post(reverse("payment-pay-all"), {}, format="json")
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
-        self.assertEqual(second.data["authority"], "REUSE123")
-        self.assertEqual(create_payment.call_count, 1)
-        self.assertEqual(Payment.objects.filter(user=self.user).count(), 1)
+        self.assertEqual(second.data["authority"], "FRESH123")
+        self.assertEqual(create_payment.call_count, 2)
+        self.assertEqual(Payment.objects.filter(user=self.user).count(), 2)
+        self.assertIsNotNone(Payment.objects.get(authority='REUSE123').superseded_at)
+        self.assertEqual(Payment.objects.filter(superseded_at__isnull=True).count(), 1)
 
     @patch("shop.views.ZarrinPal.create_payment")
     @patch("shop.views.ZarrinPal.verify_payment")
@@ -369,12 +380,14 @@ class PaymentFlowTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["authority"], "NEWCHECKOUT123")
         old_payment.refresh_from_db()
-        self.assertEqual(old_payment.payment_state, "FAILED")
+        self.assertEqual(old_payment.payment_state, "PENDING")
+        self.assertIsNotNone(old_payment.superseded_at)
+        verify_payment.assert_not_called()
         self.assertTrue(Payment.objects.filter(authority="NEWCHECKOUT123").exists())
 
     @patch("shop.views.ZarrinPal.create_payment")
     @patch("shop.views.ZarrinPal.verify_payment")
-    def test_checkout_does_not_double_charge_a_successful_stale_payment(
+    def test_old_paid_checkout_never_fulfils_the_new_checkout(
         self,
         verify_payment,
         create_payment,
@@ -396,15 +409,21 @@ class PaymentFlowTests(APITestCase):
             "card_pan": "621986******1234",
             "error": None,
         }
+        create_payment.return_value = {
+            'status': 'success', 'authority': 'NEW-LINK',
+            'link': 'https://ceit-ssc.ir/payment/start?gateway=new',
+        }
 
         response = self.client.post(reverse("payment-pay-all"), {}, format="json")
 
-        self.assertEqual(response.status_code, 409)
-        create_payment.assert_not_called()
+        self.assertEqual(response.status_code, 200)
+        verified = self.client.post(reverse('payment-verify'), {'authority': old_payment.authority})
+        self.assertEqual(verified.status_code, 409)
         old_payment.refresh_from_db()
         self.participation.refresh_from_db()
         self.assertEqual(old_payment.payment_state, "COMPLETED")
-        self.assertEqual(self.participation.payment_state, "COMPLETED")
+        self.assertTrue(old_payment.requires_manual_review)
+        self.assertEqual(self.participation.payment_state, "PENDING")
 
     def test_started_payment_reserves_capacity(self):
         self.presentation.capacity = 1

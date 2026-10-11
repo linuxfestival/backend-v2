@@ -137,7 +137,6 @@ class BundleTests(APITestCase):
         self.assertEqual(payment.bundle_snapshot[0]['presentation_ids'], [self.first.pk, self.second.pk])
         self.assertEqual(self.first.get_remained_capacity(), 2)
         self.assertEqual(self.second.get_remained_capacity(), 2)
-        self.assertEqual(self.client.delete(self.remove_url).status_code, 409)
         self.bundle.price = Decimal('10000')
         self.bundle.presentations.clear()
         self.bundle.save()
@@ -150,14 +149,18 @@ class BundleTests(APITestCase):
         self.assertEqual(self.client.delete(self.remove_url).status_code, 409)
 
     @patch('shop.views.ZarrinPal.create_payment')
-    def test_checkout_is_idempotent(self, create):
+    def test_repeated_checkout_retires_previous_bundle_link(self, create):
         self.gateway(create)
+        create.side_effect = [create.return_value, {
+            'status': 'success', 'authority': 'FRESH-BUNDLE',
+            'link': 'https://ceit-ssc.ir/payment/start?gateway=new',
+        }]
         self.client.post(self.add_url)
         first = self.client.post(self.pay_url, {}, format='json')
         second = self.client.post(self.pay_url, {}, format='json')
-        self.assertEqual(first.data, second.data)
-        self.assertEqual(Payment.objects.count(), 1)
-        create.assert_called_once()
+        self.assertNotEqual(first.data['authority'], second.data['authority'])
+        self.assertEqual(Payment.objects.count(), 2)
+        self.assertEqual(Payment.objects.filter(superseded_at__isnull=True).count(), 1)
 
     @patch('shop.views.ZarrinPal.create_payment')
     def test_member_filling_up_after_cart_addition_blocks_checkout(self, create):
@@ -217,17 +220,20 @@ class BundleTests(APITestCase):
         self.assertEqual(self.client.delete(self.remove_url).status_code, 204)
         self.assertFalse(Participation.objects.exists())
         payment.refresh_from_db()
-        self.assertEqual(payment.payment_state, 'FAILED')
+        self.assertEqual(payment.payment_state, 'PENDING')
+        self.assertIsNotNone(payment.superseded_at)
+        verify.assert_not_called()
 
     @patch('shop.views.ZarrinPal.verify_payment')
-    def test_unreachable_gateway_preserves_expired_bundle(self, verify):
+    def test_bundle_can_be_removed_without_gateway_request(self, verify):
         self.client.post(self.add_url)
         payment = Payment.objects.create(user=self.user, total_price='150000', authority='RETRY')
         payment.participations.set(Participation.objects.all())
         Payment.objects.filter(pk=payment.pk).update(created_date=timezone.now() - timedelta(hours=1))
         verify.return_value = {'status': 'error', 'error': 'Timeout'}
-        self.assertEqual(self.client.delete(self.remove_url).status_code, 503)
-        self.assertEqual(Participation.objects.count(), 2)
+        self.assertEqual(self.client.delete(self.remove_url).status_code, 204)
+        self.assertEqual(Participation.objects.count(), 0)
+        verify.assert_not_called()
 
     def test_user_cannot_access_other_users_bundle_cart(self):
         self.client.post(self.add_url)
@@ -299,8 +305,8 @@ class BundleConcurrencyTests(TransactionTestCase):
     @patch('shop.views.ZarrinPal.verify_payment')
     @patch('shop.views.ZarrinPal.create_payment')
     def test_verification_and_checkout_retry_do_not_deadlock(self, create, verify):
-        create.return_value = {
-            'status': 'success', 'authority': 'CONCURRENT-VERIFY',
+        create.side_effect = lambda **kwargs: {
+            'status': 'success', 'authority': str(uuid4()),
             'link': 'https://ceit-ssc.ir/payment/start?gateway=test',
         }
         verify.return_value = {'status': 'success', 'ref_id': 'CONFIRMED', 'card_pan': '1234'}
@@ -308,6 +314,7 @@ class BundleConcurrencyTests(TransactionTestCase):
         client.force_authenticate(self.users[0])
         client.post(reverse('bundle-add-to-cart', args=[self.bundle.pk]))
         self.assertEqual(client.post(reverse('payment-pay-all'), {}, format='json').status_code, 200)
+        old_authority = Payment.objects.get().authority
         barrier = Barrier(2)
 
         def execute(endpoint, payload):
@@ -321,8 +328,44 @@ class BundleConcurrencyTests(TransactionTestCase):
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             checkout = executor.submit(execute, reverse('payment-pay-all'), {})
-            verification = executor.submit(execute, reverse('payment-verify'), {'authority': 'CONCURRENT-VERIFY'})
+            verification = executor.submit(execute, reverse('payment-verify'), {'authority': old_authority})
             self.assertIn(checkout.result(timeout=20), [200, 400])
-            self.assertEqual(verification.result(timeout=20), 200)
-        self.assertEqual(Payment.objects.get().payment_state, 'COMPLETED')
-        self.assertEqual(Participation.objects.filter(payment_state='COMPLETED').count(), 2)
+            self.assertIn(verification.result(timeout=20), [200, 409])
+        paid = Payment.objects.get(authority=old_authority)
+        self.assertEqual(paid.payment_state, 'COMPLETED')
+        self.assertEqual(Participation.objects.filter(payment_state='COMPLETED').count(), 0 if paid.requires_manual_review else 2)
+
+    @patch('shop.views.ZarrinPal.verify_payment')
+    @patch('shop.views.ZarrinPal.create_payment')
+    def test_cart_removal_and_verification_cannot_lose_a_received_payment(self, create, verify):
+        create.return_value = {
+            'status': 'success', 'authority': 'EDIT-RACE',
+            'link': 'https://ceit-ssc.ir/payment/start?gateway=test',
+        }
+        verify.return_value = {'status': 'success', 'ref_id': 'EDIT-REF', 'card_pan': '1234'}
+        client = APIClient()
+        client.force_authenticate(self.users[0])
+        client.post(reverse('bundle-add-to-cart', args=[self.bundle.pk]))
+        client.post(reverse('payment-pay-all'), {}, format='json')
+        barrier = Barrier(2)
+
+        def execute(remove):
+            try:
+                client = APIClient()
+                client.force_authenticate(self.users[0])
+                barrier.wait(timeout=10)
+                if remove:
+                    return client.delete(reverse('bundle-remove-from-cart', args=[self.bundle.pk])).status_code
+                return client.post(reverse('payment-verify'), {'authority': 'EDIT-RACE'}).status_code
+            finally:
+                connections.close_all()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            removal, confirmation = list(executor.map(execute, [True, False]))
+        self.assertIn(removal, [204, 409])
+        self.assertIn(confirmation, [200, 409])
+        payment = Payment.objects.get()
+        self.assertEqual(payment.payment_state, 'COMPLETED')
+        self.assertEqual(payment.ref_id, 'EDIT-REF')
+        self.assertEqual(Participation.objects.count(), 0 if payment.requires_manual_review else 2)
+        self.assertEqual(payment.requires_manual_review, removal == 204)
