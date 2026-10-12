@@ -4,7 +4,29 @@ from django.db import transaction
 from django.utils import timezone
 
 from accounts.models import User
-from .models import Payment
+from .models import Payment, CouponRedemption
+
+
+def record_coupon_redemption(coupon, user, participations, payment=None):
+    items = list(participations)
+    data = {
+        'coupon': coupon, 'coupon_code': coupon.pk, 'user': user,
+        'snapshot': {
+            'percentage': payment.checkout_snapshot.get('coupon_percentage', coupon.percentage) if payment else coupon.percentage,
+            'preserve_capacity': payment.coupon_preserves_capacity if payment else coupon.preserve_capacity,
+            'discounted_presentations': [
+                {'id': item.presentation_id, 'name': item.presentation.en_title} for item in items
+            ],
+        },
+    }
+    if payment:
+        redemption, created = CouponRedemption.objects.get_or_create(payment=payment, defaults=data)
+    else:
+        redemption = CouponRedemption.objects.create(**data)
+        created = True
+    if created:
+        redemption.participations.set(items)
+    return redemption
 
 
 def atomic_cart_change(view):
@@ -24,6 +46,7 @@ def snapshot_payment(payment):
     return {
         'amount': str(payment.total_price),
         'coupon': payment.coupon_id,
+        'coupon_percentage': payment.coupon.percentage if payment.coupon_id else None,
         'bundles': payment.bundle_snapshot,
         'presentations': [
             {'id': item.presentation_id, 'name': item.presentation.en_title,

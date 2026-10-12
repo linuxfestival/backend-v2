@@ -3,7 +3,7 @@ from pathlib import Path
 from django import forms
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied
-from django.db.models import Count, Sum
+from django.db.models import Count, Sum, Q
 from django.http import FileResponse, Http404, JsonResponse
 from django.template.defaultfilters import title
 from django.urls import path, reverse
@@ -19,6 +19,7 @@ from shop.models import (
     PresentationTag,
     PresentationProposal,
     Bundle,
+    CouponRedemption,
 )
 
 admin.site.register(Presenter)
@@ -103,17 +104,60 @@ class ParticipationAdmin(admin.ModelAdmin):
 
 @admin.register(Coupon)
 class CouponAdmin(admin.ModelAdmin):
-    list_display = ('name', 'percentage', 'count', 'minimum_items', 'preserve_capacity', 'used')
+    list_display = ('name', 'percentage', 'count', 'minimum_items', 'preserve_capacity', 'used', 'discounted_registrations')
     filter_horizontal = ('eligible_presentations',)
 
+    @admin.display(description='Redeemed orders (recorded)')
     def used(self, obj):
-        return Payment.objects.filter(payment_state="COMPLETED", coupon=obj, requires_manual_review=False).count()
+        return obj.redemptions.count() + Payment.objects.filter(
+            payment_state='COMPLETED', coupon=obj, requires_manual_review=False,
+            coupon_redemption__isnull=True,
+        ).count()
+
+    @admin.display(description='Discounted registrations (recorded)')
+    def discounted_registrations(self, obj):
+        return Participation.objects.filter(payment_state='COMPLETED').filter(
+            Q(coupon_redemptions__coupon=obj)
+            | Q(coupon_payments__coupon=obj, coupon_payments__payment_state='COMPLETED',
+                coupon_payments__requires_manual_review=False),
+        ).distinct().count()
+
+
+@admin.register(CouponRedemption)
+class CouponRedemptionAdmin(admin.ModelAdmin):
+    list_display = ('coupon_code', 'user', 'payment', 'created_at')
+    list_filter = ('coupon_code', 'created_at')
+    search_fields = ('coupon_code', 'user__email', 'user__phone_number')
+    readonly_fields = ('coupon', 'coupon_code', 'user', 'payment', 'participations', 'created_at', 'snapshot')
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Presentation)
 class PresentationAdmin(admin.ModelAdmin):
-    list_display = ('__str__', 'capacity', 'get_remained_capacity', 'get_presenters')
+    list_display = ('__str__', 'capacity', 'completed_registrations', 'capacity_exempt_registrations', 'get_remained_capacity', 'get_presenters')
     actions = ('send_registration_sms', 'export_registrations')
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).annotate(
+            registered_count=Count('participations', filter=Q(participations__payment_state='COMPLETED'), distinct=True),
+            exempt_count=Count('participations', filter=Q(participations__payment_state='COMPLETED', participations__is_capacity_exempt=True), distinct=True),
+        )
+
+    @admin.display(description='Completed registrations', ordering='registered_count')
+    def completed_registrations(self, obj):
+        return obj.registered_count
+
+    @admin.display(description='Capacity-exempt registrations', ordering='exempt_count')
+    def capacity_exempt_registrations(self, obj):
+        return obj.exempt_count
 
     class Meta:
         model = Presentation

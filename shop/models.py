@@ -252,6 +252,19 @@ class Payment(models.Model):
         return f'Payment {self.pk} - {self.user.phone_number} - {self.total_price}'
 
 
+class CouponRedemption(models.Model):
+    coupon = models.ForeignKey(Coupon, on_delete=models.SET_NULL, null=True, related_name='redemptions')
+    coupon_code = models.CharField(max_length=50)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    payment = models.OneToOneField(Payment, null=True, blank=True, on_delete=models.SET_NULL, related_name='coupon_redemption')
+    participations = models.ManyToManyField(Participation, related_name='coupon_redemptions')
+    created_at = models.DateTimeField(auto_now_add=True)
+    snapshot = models.JSONField(default=dict)
+
+    def __str__(self):
+        return f'{self.coupon_code} redemption {self.pk}'
+
+
 MAX_PROPOSAL_SLIDE_SIZE = 20 * 1024 * 1024
 
 

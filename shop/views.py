@@ -18,7 +18,7 @@ from rest_framework.throttling import SimpleRateThrottle
 from accounts.models import Accessory, User
 from .models import Presentation, Participation, Payment, Coupon, Presenter, Bundle, BundleSelection
 from .payments import ZarrinPal
-from .payment_lifecycle import atomic_cart_change, snapshot_payment, supersede_pending_payments
+from .payment_lifecycle import atomic_cart_change, snapshot_payment, supersede_pending_payments, record_coupon_redemption
 from .serializers import PresentationSerializer, ParticipationSerializer, PayAllSerializer, PaymentVerifySerializer, \
     CartSerializer, PaymentListSerializer, CouponSerializer, PresenterSerializer, \
     PresentationProposalSerializer, ProposalSubmissionResponseSerializer, \
@@ -372,6 +372,7 @@ class PaymentViewSet(viewsets.ViewSet):
                     ).update(is_capacity_exempt=True)
                 coupon.count -= 1
                 coupon.save(update_fields=["count"])
+                record_coupon_redemption(coupon, user, coupon_participations)
             return Response(None, status=status.HTTP_204_NO_CONTENT)
 
         payment = Payment.objects.create(
@@ -499,6 +500,7 @@ class PaymentViewSet(viewsets.ViewSet):
                         if coupon.count > 0:
                             coupon.count -= 1
                             coupon.save(update_fields=["count"])
+                        record_coupon_redemption(coupon, payment.user, payment.coupon_participations.select_related('presentation'), payment)
                     payment.user.accessories.add(*payment.accessories.all())
 
         if payment.requires_manual_review:
