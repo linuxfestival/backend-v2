@@ -157,6 +157,35 @@ class SkyroomTests(APITestCase):
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[1][0], self.user.email)
 
+    def test_single_presentation_download_matches_sample_and_excludes_other_orders(self):
+        self.other.is_superuser = True
+        self.other.is_staff = True
+        self.other.save()
+        self.presentation.is_skyroom = False
+        self.presentation.save()
+        self.client.force_authenticate(user=None)
+        self.client.force_login(self.other)
+        url = reverse('admin:shop_presentation_export_skyroom', args=[self.presentation.pk])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        rows = list(load_workbook(BytesIO(response.content)).active.values)
+        self.assertEqual(rows[0], tuple(HEADERS))
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[1][0], self.user.email)
+        self.assertEqual(rows[1][3], 'sky')
+        self.assertEqual(rows[1][4], '09123456781')
+        self.assertEqual(rows[1][5], self.presentation.fa_title)
+        self.assertEqual(rows[1][6], self.presentation.skyroom_room_url)
+
+    def test_single_presentation_download_requires_export_permission(self):
+        self.other.is_staff = True
+        self.other.save()
+        self.client.force_authenticate(user=None)
+        self.client.force_login(self.other)
+        response = self.client.get(reverse('admin:shop_presentation_export_skyroom', args=[self.presentation.pk]))
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(SkyroomCredential.objects.exists())
+
     def test_admin_email_action_requires_confirmation_before_queueing(self):
         self.user.is_staff = True
         self.user.is_superuser = True

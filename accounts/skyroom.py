@@ -48,11 +48,13 @@ def ensure_credential(user):
         raise ImproperlyConfigured('Could not allocate a unique Skyroom username.')
 
 
-def user_presentations(user, selected_ids=None):
+def user_presentations(user, selected_ids=None, skyroom_only=True):
     from shop.models import Presentation
     items = Presentation.objects.filter(
-        participations__user=user, participations__payment_state='COMPLETED', is_skyroom=True,
+        participations__user=user, participations__payment_state='COMPLETED',
     ).distinct().order_by('pk')
+    if skyroom_only:
+        items = items.filter(is_skyroom=True)
     if selected_ids is not None:
         items = items.filter(pk__in=selected_ids)
     return items
@@ -63,14 +65,14 @@ def room_data(items):
              'room_url': item.skyroom_room_url, 'start': item.start.isoformat()} for item in items]
 
 
-def export_users(users, selected_ids=None):
+def export_users(users, selected_ids=None, include_non_skyroom=False):
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = 'Participants'
     sheet.append(HEADERS)
     for user in users.order_by('pk'):
         credential = ensure_credential(user)
-        rooms = room_data(user_presentations(user, selected_ids))
+        rooms = room_data(user_presentations(user, selected_ids, skyroom_only=not include_non_skyroom))
         values = [user.email, user.phone_number, user.get_full_name(), credential.username,
                   credential_password(credential), '\n'.join(r['name'] for r in rooms),
                   '\n'.join(dict.fromkeys(r['room_url'] for r in rooms if r['room_url']))]

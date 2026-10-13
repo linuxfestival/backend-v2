@@ -5,12 +5,15 @@ from django.contrib import admin
 from django.core.exceptions import PermissionDenied
 from django.db.models import Count, Sum, Q
 from django.http import FileResponse, Http404, JsonResponse
+from django.shortcuts import redirect
 from django.template.defaultfilters import title
 from django.urls import path, reverse
 from django.utils.html import format_html
 
 from accounts.sms import SMS_EXECUTOR, send_sms
 from accounts.skyroom_admin import SkyroomPresentationActions
+from accounts.skyroom import export_users
+from accounts.models import User
 from shop.models import (
     Presenter,
     Presentation,
@@ -143,8 +146,40 @@ class CouponRedemptionAdmin(admin.ModelAdmin):
 
 @admin.register(Presentation)
 class PresentationAdmin(SkyroomPresentationActions, admin.ModelAdmin):
+    change_form_template = 'admin/shop/presentation/change_form.html'
     list_display = ('__str__', 'capacity', 'completed_registrations', 'capacity_exempt_registrations', 'display_remaining', 'checkout_remaining', 'get_presenters')
     actions = ('send_registration_sms', 'export_registrations', 'export_skyroom_credentials', 'email_skyroom_credentials')
+
+    def get_urls(self):
+        return [path(
+            '<path:object_id>/export-skyroom/',
+            self.admin_site.admin_view(self.download_participants_excel),
+            name='shop_presentation_export_skyroom',
+        )] + super().get_urls()
+
+    def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
+        context = dict(extra_context or {})
+        if object_id:
+            obj = self.get_object(request, object_id)
+            if obj and self.has_view_or_change_permission(request, obj) and self.has_export_skyroom_permission(request):
+                context['participants_excel_url'] = reverse('admin:shop_presentation_export_skyroom', args=[obj.pk])
+        return super().changeform_view(request, object_id, form_url, context)
+
+    def download_participants_excel(self, request, object_id):
+        from django.core.exceptions import ImproperlyConfigured
+        obj = self.get_object(request, object_id)
+        if obj is None:
+            raise Http404('Presentation not found.')
+        if not self.has_view_or_change_permission(request, obj) or not self.has_export_skyroom_permission(request):
+            raise PermissionDenied
+        users = User.objects.filter(participations__presentation=obj,
+                                    participations__payment_state='COMPLETED').distinct()
+        try:
+            return export_users(users, [obj.pk], include_non_skyroom=True)
+        except ImproperlyConfigured as error:
+            from django.contrib import messages
+            self.message_user(request, str(error), level=messages.ERROR)
+            return redirect(reverse('admin:shop_presentation_change', args=[obj.pk]))
 
     def get_queryset(self, request):
         return super().get_queryset(request).annotate(

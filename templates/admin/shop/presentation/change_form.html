@@ -1,0 +1,7 @@
+{% extends "admin/change_form.html" %}
+{% block object-tools-items %}
+  {% if participants_excel_url %}
+    <li><a href="{{ participants_excel_url }}">Download Skyroom Excel</a></li>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}

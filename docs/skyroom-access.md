@@ -25,8 +25,13 @@ Actions:
 
 - **Accounts → Users → Export Skyroom credentials (Excel)** exports all selected
   users, or select all across pages to export all accounts.
+- On a presentation edit page, **Download Skyroom Excel** at the top downloads
+  one row per completed participant of that presentation, with the sample's
+  seven columns, saved credentials, presentation name, and room link.
 - **Shop → Presentations → Export participants’ Skyroom credentials (Excel)**
-  exports one row per completed participant, limited to selected Skyroom sessions.
+  exports one row per completed participant, limited to selected presentations.
+  Admin exports work even before the Skyroom flag/link is configured; enabling
+  that flag is still required for private user-panel access and email delivery.
 - **Shop → Presentations → Email Skyroom credentials to participants** asks for
   confirmation, then queues one email per completed participant. Each email
   contains only that user's saved credentials and their selected room links.

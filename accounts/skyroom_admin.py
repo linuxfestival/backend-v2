@@ -32,12 +32,11 @@ class SkyroomPresentationActions(SkyroomAdminPermissions):
 
     @admin.action(description='Export participants’ Skyroom credentials (Excel)', permissions=['export_skyroom'])
     def export_skyroom_credentials(self, request, queryset):
-        ids, users = self.skyroom_users(queryset)
-        if not ids:
-            self.message_user(request, 'Select a presentation with Skyroom enabled.', level=messages.WARNING)
-            return
+        ids = list(queryset.values_list('pk', flat=True))
+        users = User.objects.filter(participations__payment_state='COMPLETED',
+                                    participations__presentation_id__in=ids).distinct()
         try:
-            return export_users(users, ids)
+            return export_users(users, ids, include_non_skyroom=True)
         except ImproperlyConfigured as error:
             self.message_user(request, str(error), level=messages.ERROR)
 
