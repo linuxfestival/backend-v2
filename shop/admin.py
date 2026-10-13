@@ -10,6 +10,7 @@ from django.urls import path, reverse
 from django.utils.html import format_html
 
 from accounts.sms import SMS_EXECUTOR, send_sms
+from accounts.skyroom_admin import SkyroomPresentationActions
 from shop.models import (
     Presenter,
     Presentation,
@@ -141,9 +142,9 @@ class CouponRedemptionAdmin(admin.ModelAdmin):
 
 
 @admin.register(Presentation)
-class PresentationAdmin(admin.ModelAdmin):
+class PresentationAdmin(SkyroomPresentationActions, admin.ModelAdmin):
     list_display = ('__str__', 'capacity', 'completed_registrations', 'capacity_exempt_registrations', 'display_remaining', 'checkout_remaining', 'get_presenters')
-    actions = ('send_registration_sms', 'export_registrations')
+    actions = ('send_registration_sms', 'export_registrations', 'export_skyroom_credentials', 'email_skyroom_credentials')
 
     def get_queryset(self, request):
         return super().get_queryset(request).annotate(

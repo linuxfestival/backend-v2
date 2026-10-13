@@ -2,6 +2,7 @@ from django.urls import path
 from rest_framework import routers
 
 from . import views
+from .skyroom_views import SkyroomAccessView
 from rest_framework_simplejwt.views import TokenRefreshView, token_blacklist
 
 app_name = 'accounts'
@@ -12,6 +13,7 @@ router.register('faq', views.FAQViewSet, 'faq')
 router.register('accessory', views.AccessoryViewSet, 'accessory')
 
 urlpatterns = [
+                  path('users/skyroom/', SkyroomAccessView.as_view(), name='skyroom-access'),
                   # flush expired tokens on a daily basis.
                   path('token/access/', views.EmailTokenObtainPairView.as_view(), name='token'),
                   path('token/refresh/', TokenRefreshView.as_view(), name='refresh_token'),

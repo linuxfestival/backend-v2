@@ -1,0 +1,15 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+  <p>Send Skyroom login credentials to {{ recipient_count }} registered participant{{ recipient_count|pluralize }}?</p>
+  <ul>{% for presentation in presentations %}<li>{{ presentation }}{% if not presentation.skyroom_room_url %} — room link not configured yet{% endif %}</li>{% endfor %}</ul>
+  <p>Emails will use the saved Skyroom username and phone-based password. This does not change website login passwords.</p>
+  <form method="post">
+    {% csrf_token %}
+    {% for id in selected_ids %}<input type="hidden" name="_selected_action" value="{{ id }}">{% endfor %}
+    <input type="hidden" name="select_across" value="{{ select_across }}">
+    <input type="hidden" name="action" value="email_skyroom_credentials">
+    <input type="hidden" name="confirm" value="yes">
+    <input type="submit" value="Queue credential emails">
+    <a href=".">Cancel</a>
+  </form>
+{% endblock %}

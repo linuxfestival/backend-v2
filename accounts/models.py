@@ -146,6 +146,34 @@ class User(AbstractBaseUser, PermissionsMixin):
             self.email = self.email.lower()
         super(User, self).save(*args, **kwargs)
 
+class SkyroomCredential(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='skyroom_credential')
+    username = models.CharField(max_length=255, unique=True)
+    encrypted_password = models.TextField(editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        permissions = [
+            ('export_skyroom_credentials', 'Can export Skyroom usernames and passwords'),
+            ('email_skyroom_credentials', 'Can email Skyroom credentials to participants'),
+        ]
+
+    def __str__(self):
+        return self.username
+
+
+class SkyroomEmail(models.Model):
+    credential = models.ForeignKey(SkyroomCredential, on_delete=models.CASCADE, related_name='emails')
+    recipient = models.EmailField()
+    presentations = models.JSONField(default=list)
+    status = models.CharField(max_length=10, choices=[('PENDING', 'Pending'), ('SENT', 'Sent'), ('FAILED', 'Failed')], default='PENDING')
+    attempts = models.PositiveSmallIntegerField(default=0)
+    available_at = models.DateTimeField(default=timezone.now)
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=100, blank=True)
+
+
 class RoleEnum(Enum):
     DIRECTOR = "Director"
     HEAD = "Head"

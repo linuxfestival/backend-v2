@@ -7,9 +7,11 @@ from django.urls import path, reverse
 from django.utils.html import format_html
 
 from .models import Accessory, FAQ, Resume, Staff, User
+from .skyroom_admin import SkyroomUserActions
 
 
-class UserAdmin(admin.ModelAdmin):
+class UserAdmin(SkyroomUserActions, admin.ModelAdmin):
+    actions = ['export_skyroom_credentials']
     ordering = ['date_joined']
     list_display = ['phone_number', 'first_name', 'last_name', 'email', 'is_staff', 'is_active', 'participation_presentations']
     list_filter = ['is_staff', 'is_active', 'date_joined']

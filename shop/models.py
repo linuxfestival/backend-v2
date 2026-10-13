@@ -65,6 +65,8 @@ class Presentation(models.Model):
     capacity = models.PositiveIntegerField(blank=False)
     is_registration_active = models.BooleanField(default=True)
     presentation_link = models.URLField(blank=True)
+    is_skyroom = models.BooleanField(default=False, help_text='Enable Skyroom access for completed participants.')
+    skyroom_room_url = models.URLField(blank=True, help_text='Room link shown to registered users and included in credential emails/exports.')
     cost = models.DecimalField(max_digits=12, decimal_places=2, blank=False)
 
     morkopoloyor = models.URLField(blank=True)
