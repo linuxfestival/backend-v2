@@ -52,7 +52,7 @@ class SkyroomTests(APITestCase):
     def test_owner_gets_saved_phone_password_and_room_link(self):
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['username'], 'skyexample.com')
+        self.assertEqual(response.data['username'], 'sky')
         self.assertEqual(response.data['password'], '09123456781')
         self.assertEqual(response.data['presentations'][0]['room_url'], self.presentation.skyroom_room_url)
         self.assertIn('no-store', response['Cache-Control'])
@@ -113,10 +113,11 @@ class SkyroomTests(APITestCase):
         self.assertEqual(SkyroomCredential.objects.get().encrypted_password, encrypted)
 
     def test_username_collisions_are_resolved_without_overwriting_another_user(self):
-        first = self.user_record('ab@c.example', '09123456783')
-        second = self.user_record('a@bc.example', '09123456784')
+        first = self.user_record('same@first.example', '09123456783')
+        second = self.user_record('same@second.example', '09123456784')
         a, b = ensure_credential(first), ensure_credential(second)
-        self.assertEqual(a.username, 'abc.example')
+        self.assertEqual(a.username, 'same')
+        self.assertEqual(b.username, f'same-{second.pk}')
         self.assertNotEqual(a.username, b.username)
         self.assertNotIn('@', b.username)
 

@@ -36,8 +36,8 @@ def ensure_credential(user):
             return existing
         password = user.phone_number.strip().removeprefix('+98')
         encrypted = cipher().encrypt(password.encode('utf-8')).decode('ascii')
-        base = user.email.lower().replace('@', '')[:240]
-        # Distinct email addresses can collapse to the same username. Unique
+        base = user.email.lower().split('@', 1)[0][:240]
+        # Different domains can share the same email prefix. Unique
         # constraints and savepoints also handle simultaneous first exports.
         for username in [base, f'{base}-{user.pk}']:
             try:

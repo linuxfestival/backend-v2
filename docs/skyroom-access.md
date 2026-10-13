@@ -1,8 +1,8 @@
 # Skyroom credentials and room links
 
 Each website user receives one separate saved Skyroom login. Its initial username
-is the lowercase email with `@` removed (`ali@example.com` → `aliexample.com`).
-If two emails collapse to the same username, append `-{user_id}` to avoid a
+is the lowercase part before `@` (`ali@example.com` → `ali`).
+If two users share the same email prefix, append `-{user_id}` to avoid a
 collision. The initial Skyroom password is the saved phone number with only a
 leading `+98` removed: `09123456789` stays `09123456789`; `+989123456789` becomes
 `9123456789`. The website login password is never read, reused, or changed.
@@ -60,7 +60,7 @@ Example response (test values):
 
 ```json
 {
-  "username": "aliexample.com",
+  "username": "ali",
   "password": "09123456789",
   "presentations": [
     {
