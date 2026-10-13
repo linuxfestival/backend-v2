@@ -25,16 +25,21 @@ class PresentationTagSerializer(serializers.ModelSerializer):
 
 class PresentationSerializer(serializers.ModelSerializer):
     remained_capacity = serializers.SerializerMethodField()
+    checkout_remaining_capacity = serializers.SerializerMethodField()
     presenters = PresenterSerializer(many=True)
     tags = PresentationTagSerializer(many=True, read_only=True)
 
     def get_remained_capacity(self, obj):
+        return obj.get_display_remained_capacity()
+
+    def get_checkout_remaining_capacity(self, obj) -> int:
         return obj.get_remained_capacity()
 
     class Meta:
         model = Presentation
         fields = [
             'service_type', 'capacity', 'start', 'end', 'fa_description', 'en_description', 'remained_capacity',
+            'checkout_remaining_capacity',
             'id', 'cost', 'presenters', 'is_registration_active', 'presentation_link', 'tags', 'morkopoloyor',
             'fa_title', 'en_title'
         ]

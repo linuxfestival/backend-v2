@@ -10,6 +10,9 @@ from rest_framework.test import APITestCase
 from accounts.models import User
 from shop.admin import CouponAdmin, PresentationAdmin
 from shop.models import Coupon, CouponRedemption, Participation, Payment, Presentation
+from shop.serializers import PresentationSerializer
+from shop.bundles import BundleSerializer
+from shop.models import Bundle
 
 
 class RegistrationAndCouponAuditTests(APITestCase):
@@ -104,6 +107,30 @@ class RegistrationAndCouponAuditTests(APITestCase):
         self.assertEqual(model_admin.completed_registrations(first), 1)
         self.assertEqual(model_admin.capacity_exempt_registrations(first), 1)
         self.assertEqual(model_admin.completed_registrations(second), 0)
+
+    def test_display_counts_exempt_registrations_but_checkout_does_not(self):
+        self.first.capacity = 1
+        self.first.save()
+        Participation.objects.create(user=self.user, presentation=self.first, payment_state='COMPLETED', is_capacity_exempt=True)
+        data = PresentationSerializer(self.first).data
+        self.assertEqual(data['remained_capacity'], 0)
+        self.assertEqual(data['checkout_remaining_capacity'], 1)
+        self.assertEqual(self.first.get_remained_capacity(), 1)
+        bundle = Bundle.objects.create(name='Capacity display', price='10000')
+        bundle.presentations.set([self.first, self.second])
+        data = BundleSerializer(bundle).data
+        self.assertEqual(data['remaining_capacity'], 0)
+        self.assertEqual(data['checkout_remaining_capacity'], 1)
+        self.assertTrue(data['is_available'])
+
+    def test_display_keeps_gateway_reservations_and_ignores_retired_links(self):
+        item = Participation.objects.create(user=self.user, presentation=self.first)
+        payment = Payment.objects.create(user=self.user, total_price='10000', authority='DISPLAY-RESERVED')
+        payment.participations.add(item)
+        self.assertEqual(PresentationSerializer(self.first).data['remained_capacity'], 9)
+        payment.superseded_at = timezone.now()
+        payment.save()
+        self.assertEqual(PresentationSerializer(self.first).data['remained_capacity'], 10)
 
     @patch('shop.views.ZarrinPal.create_payment')
     def test_scoped_coupon_logs_only_discounted_members_of_mixed_cart(self, create):

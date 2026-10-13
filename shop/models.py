@@ -79,13 +79,21 @@ class Presentation(models.Model):
             raise ValidationError("End time must be after start time.")
 
     def get_remained_capacity(self):
+        return self._remaining_capacity(include_exempt=False)
+
+    def get_display_remained_capacity(self):
+        return self._remaining_capacity(include_exempt=True)
+
+    def _remaining_capacity(self, include_exempt):
         # A started gateway payment reserves its seat until it is completed or
         # explicitly fails. This prevents two users from paying for the final
         # seat at the same time.
         committed = Participation.objects.filter(
             presentation=self,
-            is_capacity_exempt=False,
-        ).filter(
+        )
+        if not include_exempt:
+            committed = committed.filter(is_capacity_exempt=False)
+        committed = committed.filter(
             models.Q(payment_state="COMPLETED")
             | models.Q(
                 payment_state="PENDING",

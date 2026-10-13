@@ -142,7 +142,7 @@ class CouponRedemptionAdmin(admin.ModelAdmin):
 
 @admin.register(Presentation)
 class PresentationAdmin(admin.ModelAdmin):
-    list_display = ('__str__', 'capacity', 'completed_registrations', 'capacity_exempt_registrations', 'get_remained_capacity', 'get_presenters')
+    list_display = ('__str__', 'capacity', 'completed_registrations', 'capacity_exempt_registrations', 'display_remaining', 'checkout_remaining', 'get_presenters')
     actions = ('send_registration_sms', 'export_registrations')
 
     def get_queryset(self, request):
@@ -158,6 +158,14 @@ class PresentationAdmin(admin.ModelAdmin):
     @admin.display(description='Capacity-exempt registrations', ordering='exempt_count')
     def capacity_exempt_registrations(self, obj):
         return obj.exempt_count
+
+    @admin.display(description='Remaining (all registrations)')
+    def display_remaining(self, obj):
+        return obj.get_display_remained_capacity()
+
+    @admin.display(description='Checkout capacity (excludes exempt)')
+    def checkout_remaining(self, obj):
+        return obj.get_remained_capacity()
 
     class Meta:
         model = Presentation

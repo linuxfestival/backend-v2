@@ -18,13 +18,14 @@ class BundleSerializer(serializers.ModelSerializer):
     tags = PresentationTagSerializer(many=True, read_only=True)
     original_price = serializers.SerializerMethodField()
     remaining_capacity = serializers.SerializerMethodField()
+    checkout_remaining_capacity = serializers.SerializerMethodField()
     is_available = serializers.SerializerMethodField()
     unavailable_reason = serializers.SerializerMethodField()
 
     class Meta:
         model = Bundle
         fields = ['id', 'name', 'description', 'price', 'original_price', 'tags',
-                  'presentations', 'is_active', 'remaining_capacity', 'is_available', 'unavailable_reason']
+                  'presentations', 'is_active', 'remaining_capacity', 'checkout_remaining_capacity', 'is_available', 'unavailable_reason']
 
     def get_original_price(self, obj) -> str:
         return str(sum((item.cost for item in obj.presentations.all()), Decimal('0')))
@@ -37,6 +38,11 @@ class BundleSerializer(serializers.ModelSerializer):
         return self._availability_cache[obj.pk]
 
     def get_remaining_capacity(self, obj) -> int:
+        if self._availability(obj)[1] in ['inactive', 'insufficient_presentations', 'started', 'registration_closed']:
+            return 0
+        return min((item.get_display_remained_capacity() for item in obj.presentations.all()), default=0)
+
+    def get_checkout_remaining_capacity(self, obj) -> int:
         return self._availability(obj)[0]
 
     def get_is_available(self, obj) -> bool:
