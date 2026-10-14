@@ -1,4 +1,6 @@
 from io import BytesIO
+import re
+from urllib.parse import unquote, urlsplit
 
 from cryptography.fernet import Fernet, InvalidToken
 from django.conf import settings
@@ -11,7 +13,23 @@ from openpyxl import Workbook
 from .models import SkyroomCredential, SkyroomEmail, User
 
 
-HEADERS = ['email', 'phone_number', 'full_name', 'sky_username', 'sky_password', 'presentations', 'rooms']
+# Skyroom reads every row as data (including row 1), by position, not headings.
+IMPORT_COLUMNS = ['username', 'password', 'nickname', 'rooms', 'access', 'email', 'mobile', 'firstname', 'lastname']
+
+
+def import_room_names(items):
+    """Import expects comma-separated short room addresses, never full URLs."""
+    names = []
+    for item in items:
+        try:
+            path = unquote(urlsplit(item.skyroom_room_url).path).strip('/').split('/')
+        except ValueError:
+            continue
+        if len(path) == 3 and path[0] == 'ch' and re.fullmatch(r'[a-zA-Z0-9_.-]+', path[2]):
+            name = path[2].lower()
+            if name not in names:
+                names.append(name)
+    return ','.join(names)
 
 
 def cipher():
@@ -68,23 +86,23 @@ def room_data(items):
 def export_users(users, selected_ids=None, include_non_skyroom=False):
     workbook = Workbook()
     sheet = workbook.active
-    sheet.title = 'Participants'
-    sheet.append(HEADERS)
+    sheet.title = 'Sheet1'
     for user in users.order_by('pk'):
         credential = ensure_credential(user)
-        rooms = room_data(user_presentations(user, selected_ids, skyroom_only=not include_non_skyroom))
-        values = [user.email, user.phone_number, user.get_full_name(), credential.username,
-                  credential_password(credential), '\n'.join(r['name'] for r in rooms),
-                  '\n'.join(dict.fromkeys(r['room_url'] for r in rooms if r['room_url']))]
+        rooms = import_room_names(user_presentations(user, selected_ids, skyroom_only=not include_non_skyroom))
+        # Both rooms/access must be blank when no room is configured. Never use
+        # '*' (all rooms), a presentation title, or an elevated role as fallback.
+        values = [credential.username, credential_password(credential),
+                  user.get_full_name().strip() or credential.username,
+                  rooms, 'normal' if rooms else '', user.email, user.phone_number,
+                  user.first_name, user.last_name]
         sheet.append(values)
         # User-controlled names/titles must remain text, never Excel formulas;
         # phone/password leading zeroes must also survive import.
         for cell in sheet[sheet.max_row]:
             cell.data_type = 's'
             cell.number_format = '@'
-    sheet.freeze_panes = 'A2'
-    sheet.auto_filter.ref = sheet.dimensions
-    for column, width in zip('ABCDEFG', [32, 20, 30, 35, 20, 55, 60]):
+    for column, width in zip('ABCDEFGHI', [35, 20, 30, 45, 15, 35, 20, 25, 25]):
         sheet.column_dimensions[column].width = width
     data = BytesIO()
     workbook.save(data)

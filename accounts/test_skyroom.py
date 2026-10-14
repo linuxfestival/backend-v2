@@ -2,6 +2,7 @@ from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO, StringIO
 from threading import Barrier
+from types import SimpleNamespace
 from unittest import skipUnless
 from unittest.mock import patch
 
@@ -19,7 +20,7 @@ from rest_framework.test import APITestCase
 
 from accounts.admin import UserAdmin
 from accounts.models import SkyroomCredential, SkyroomEmail, User
-from accounts.skyroom import HEADERS, credential_password, ensure_credential, export_users, queue_credential_emails
+from accounts.skyroom import IMPORT_COLUMNS, credential_password, ensure_credential, export_users, import_room_names, queue_credential_emails
 from shop.admin import PresentationAdmin
 from shop.models import Participation, Presentation
 from shop.serializers import PresentationSerializer
@@ -69,9 +70,9 @@ class SkyroomTests(APITestCase):
         again = self.client.get(self.url).data
         response = export_users(User.objects.filter(pk=self.user.pk))
         workbook = load_workbook(BytesIO(response.content))
-        row = list(workbook.active.values)[1]
+        row = list(workbook.active.values)[0]
         self.assertEqual(first['password'], again['password'])
-        self.assertEqual(row[3:5], (first['username'], first['password']))
+        self.assertEqual(row[:2], (first['username'], first['password']))
         self.assertEqual(SkyroomCredential.objects.count(), 1)
 
     def test_password_removes_only_leading_iran_country_prefix(self):
@@ -121,18 +122,52 @@ class SkyroomTests(APITestCase):
         self.assertNotEqual(a.username, b.username)
         self.assertNotIn('@', b.username)
 
-    def test_excel_matches_sample_headers_preserves_zeroes_and_blocks_formulas(self):
+    def test_excel_is_headerless_in_skyroom_order_preserves_zeroes_and_blocks_formulas(self):
         self.user.first_name = '=HYPERLINK("evil")'
         self.user.save()
         response = export_users(User.objects.filter(pk=self.user.pk))
         workbook = load_workbook(BytesIO(response.content))
         sheet = workbook.active
-        self.assertEqual(list(sheet.values)[0], tuple(HEADERS))
-        self.assertEqual(sheet['B2'].value, '09123456781')
-        self.assertEqual(sheet['E2'].value, '09123456781')
-        self.assertEqual(sheet['C2'].data_type, 's')
-        self.assertEqual(sheet['G2'].value, self.presentation.skyroom_room_url)
+        self.assertEqual(IMPORT_COLUMNS, ['username', 'password', 'nickname', 'rooms', 'access',
+                                          'email', 'mobile', 'firstname', 'lastname'])
+        self.assertEqual(sheet.max_row, 1)
+        self.assertEqual(sheet.max_column, 9)
+        self.assertEqual(sheet['A1'].value, 'sky')
+        self.assertEqual(sheet['B1'].value, '09123456781')
+        self.assertEqual(sheet['G1'].value, '09123456781')
+        self.assertEqual(sheet['C1'].data_type, 's')
+        self.assertEqual(sheet['D1'].value, 'room')
+        self.assertEqual(sheet['E1'].value, 'normal')
+        self.assertEqual(sheet['F1'].value, self.user.email)
+        self.assertTrue(all(cell.data_type == 's' for cell in sheet[1]))
         self.assertIn('no-store', response['Cache-Control'])
+
+    def test_export_without_room_omits_access_instead_of_granting_all_rooms(self):
+        self.presentation.skyroom_room_url = ''
+        self.presentation.save()
+        row = next(load_workbook(BytesIO(export_users(User.objects.filter(pk=self.user.pk)).content)).active.values)
+        self.assertEqual(row[3:5], (None, None))
+
+    def test_import_rooms_deduplicate_slugs_and_never_grant_wildcard_access(self):
+        urls = ['https://www.skyroom.online/ch/account/Room/',
+                'https://www.skyroom.online/ch/account/room?x=1',
+                'https://www.skyroom.online/ch/account/*',
+                'https://www.skyroom.online/ch/account/room%2Cother',
+                'https://custom.example/unknown', 'https://[invalid']
+        self.assertEqual(import_room_names([SimpleNamespace(skyroom_room_url=url) for url in urls]), 'room')
+
+    def test_export_uses_only_selected_completed_rooms_with_normal_access(self):
+        other = Presentation.objects.get(pk=self.presentation.pk)
+        other.pk = None
+        other.skyroom_room_url = 'https://www.skyroom.online/ch/test/second'
+        other.save()
+        Participation.objects.create(user=self.user, presentation=other, payment_state='COMPLETED')
+        response = export_users(User.objects.filter(pk=self.user.pk), [self.presentation.pk])
+        row = next(load_workbook(BytesIO(response.content)).active.values)
+        self.assertEqual(row[3:5], ('room', 'normal'))
+        response = export_users(User.objects.filter(pk=self.user.pk))
+        row = next(load_workbook(BytesIO(response.content)).active.values)
+        self.assertEqual(row[3:5], ('room,second', 'normal'))
 
     def test_admin_actions_require_explicit_credential_permissions(self):
         self.other.is_staff = True
@@ -154,8 +189,9 @@ class SkyroomTests(APITestCase):
         model_admin = PresentationAdmin(Presentation, admin.site)
         response = model_admin.export_skyroom_credentials(request, Presentation.objects.filter(pk=self.presentation.pk))
         rows = list(load_workbook(BytesIO(response.content)).active.values)
-        self.assertEqual(len(rows), 2)
-        self.assertEqual(rows[1][0], self.user.email)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][0], 'sky')
+        self.assertEqual(rows[0][5], self.user.email)
 
     def test_single_presentation_download_matches_sample_and_excludes_other_orders(self):
         self.other.is_superuser = True
@@ -169,13 +205,9 @@ class SkyroomTests(APITestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         rows = list(load_workbook(BytesIO(response.content)).active.values)
-        self.assertEqual(rows[0], tuple(HEADERS))
-        self.assertEqual(len(rows), 2)
-        self.assertEqual(rows[1][0], self.user.email)
-        self.assertEqual(rows[1][3], 'sky')
-        self.assertEqual(rows[1][4], '09123456781')
-        self.assertEqual(rows[1][5], self.presentation.fa_title)
-        self.assertEqual(rows[1][6], self.presentation.skyroom_room_url)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0], ('sky', '09123456781', 'Skyroom Tester', 'room', 'normal',
+                                   self.user.email, self.user.phone_number, 'Skyroom', 'Tester'))
 
     def test_single_presentation_download_requires_export_permission(self):
         self.other.is_staff = True

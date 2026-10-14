@@ -26,8 +26,8 @@ Actions:
 - **Accounts → Users → Export Skyroom credentials (Excel)** exports all selected
   users, or select all across pages to export all accounts.
 - On a presentation edit page, **Download Skyroom Excel** at the top downloads
-  one row per completed participant of that presentation, with the sample's
-  seven columns, saved credentials, presentation name, and room link.
+  one row per completed participant of that presentation, ready for Skyroom's
+  user import, using saved credentials and configured room short addresses.
 - **Shop → Presentations → Export participants’ Skyroom credentials (Excel)**
   exports one row per completed participant, limited to selected presentations.
   Admin exports work even before the Skyroom flag/link is configured; enabling
@@ -38,9 +38,18 @@ Actions:
 - **Accounts → Skyroom emails** shows pending/sent/failed delivery states, attempts,
   and error classes. Staff can retry failed emails after fixing SMTP configuration.
 
-The export matches the supplied sample columns exactly:
-`email`, `phone_number`, `full_name`, `sky_username`, `sky_password`,
-`presentations`, `rooms`. Multiple presentations/room links are newline-separated.
+The export follows Skyroom's positional user-import format, with **no header row**:
+`username`, `password`, `nickname`, `rooms`, `access`, `email`, `mobile`,
+`firstname`, `lastname`. The first row is a real user, not column labels.
+Username and password are the same saved values returned to the user panel.
+Room URLs of the form `/ch/account/room` produce comma-separated short room
+addresses (`room`), never full URLs or presentation titles. Access is `normal`,
+never presenter/operator. If no supported room URL is configured, both rooms and
+access are blank: users can be imported, but room membership must be assigned
+in Skyroom manually or by reimport after configuring a room URL. No wildcard
+access is granted. This replaces the older seven-column participant report.
+The format and `normal` role were verified against Skyroom's public user-import
+component and [official user template](https://www.skyroom.online/panel/users-import-template.xlsx).
 Phone/password cells are text to preserve leading zeroes, and all strings are
 written as text to prevent spreadsheet formula execution.
 
