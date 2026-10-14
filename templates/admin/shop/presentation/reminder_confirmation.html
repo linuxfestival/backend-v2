@@ -1,0 +1,19 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+  {% if error %}<p class="errornote">{{ error }}</p>{% endif %}
+  <h2>{{ presentation }}</h2>
+  <p>Send one reminder email to each of the {{ recipient_count }} active, confirmed participant{{ recipient_count|pluralize }}?</p>
+  <p>Unpaid carts, failed payments, inactive accounts, and users registered only for other presentations are excluded. No passwords are included.</p>
+  <p>Sending again from a new confirmation page deliberately creates a new reminder batch.</p>
+  <h3>Email preview (each recipient's name will be used)</h3>
+  <p><strong>{{ email_subject }}</strong></p>
+  <div dir="auto" style="white-space: pre-wrap">{{ email_body }}</div>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="confirmation_token" value="{{ confirmation_token }}">
+    <input type="hidden" name="confirm" value="yes">
+    {% if recipient_count %}<input type="submit" value="Confirm and queue reminder emails">{% endif %}
+    <a href="{{ cancel_url }}">Cancel</a>
+    <a href="{{ delivery_url }}">View delivery status</a>
+  </form>
+{% endblock %}

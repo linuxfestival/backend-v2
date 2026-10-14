@@ -333,3 +333,22 @@ class PresentationProposal(models.Model):
 
     def __str__(self):
         return f'{self.full_name} - {self.topic}'
+
+
+class PresentationReminder(models.Model):
+    presentation = models.ForeignKey(Presentation, on_delete=models.CASCADE, related_name='reminder_emails')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='presentation_reminders')
+    queued_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+                                  related_name='queued_presentation_reminders')
+    batch_id = models.UUIDField(db_index=True)
+    recipient = models.EmailField()
+    status = models.CharField(max_length=10, choices=[('PENDING', 'Pending'), ('SENT', 'Sent'), ('FAILED', 'Failed')], default='PENDING')
+    attempts = models.PositiveSmallIntegerField(default=0)
+    available_at = models.DateTimeField(default=timezone.now)
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=100, blank=True)
+
+    class Meta:
+        permissions = [('send_presentation_reminders', 'Can send reminder emails to presentation participants')]
+        constraints = [models.UniqueConstraint(fields=['batch_id', 'user'], name='unique_reminder_batch_user')]

@@ -86,6 +86,7 @@ MAIL_FROM_ADDRESS = os.getenv("MAIL_FROM_ADDRESS", "noreply@localhost")
 MAIL_FROM_NAME = os.getenv("MAIL_FROM_NAME", "LinuxFest")
 DEFAULT_FROM_EMAIL = f"{MAIL_FROM_NAME} <{MAIL_FROM_ADDRESS}>"
 SKYROOM_ENCRYPTION_KEY = os.getenv('SKYROOM_ENCRYPTION_KEY', '')
+PUBLIC_SITE_URL = os.getenv('PUBLIC_SITE_URL', 'https://linuxfest.ir')
 
 PAYMENT_API_KEY = os.getenv("PAYMENT_API_KEY", default="auth")
 PAYMENT_CALLBACK_URL = os.getenv("PAYMENT_CALLBACK_URL", default="callback")

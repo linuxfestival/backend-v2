@@ -1,0 +1,4 @@
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+* * * * * root cd /root/linuxfest-deploy && /usr/bin/flock -n /run/lock/linuxfest-presentation-reminder.lock /usr/bin/docker compose exec -T backend python manage.py send_presentation_reminders --limit 25 >> /var/log/linuxfest-presentation-reminders.log 2>&1

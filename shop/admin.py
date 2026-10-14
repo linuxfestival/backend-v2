@@ -1,11 +1,12 @@
 from pathlib import Path
 
 from django import forms
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied
 from django.db.models import Count, Sum, Q
-from django.http import FileResponse, Http404, JsonResponse
+from django.http import FileResponse, Http404, HttpResponseNotAllowed, JsonResponse
 from django.shortcuts import redirect
+from django.template.response import TemplateResponse
 from django.template.defaultfilters import title
 from django.urls import path, reverse
 from django.utils.html import format_html
@@ -24,7 +25,9 @@ from shop.models import (
     PresentationProposal,
     Bundle,
     CouponRedemption,
+    PresentationReminder,
 )
+from shop.reminders import confirmation_token, queue_reminders, reminder_batch, reminder_content, reminder_recipients
 
 admin.site.register(Presenter)
 
@@ -152,6 +155,10 @@ class PresentationAdmin(SkyroomPresentationActions, admin.ModelAdmin):
 
     def get_urls(self):
         return [path(
+            '<path:object_id>/notify-participants/',
+            self.admin_site.admin_view(self.notify_participants),
+            name='shop_presentation_notify_participants',
+        ), path(
             '<path:object_id>/export-skyroom/',
             self.admin_site.admin_view(self.download_participants_excel),
             name='shop_presentation_export_skyroom',
@@ -163,7 +170,42 @@ class PresentationAdmin(SkyroomPresentationActions, admin.ModelAdmin):
             obj = self.get_object(request, object_id)
             if obj and self.has_view_or_change_permission(request, obj) and self.has_export_skyroom_permission(request):
                 context['participants_excel_url'] = reverse('admin:shop_presentation_export_skyroom', args=[obj.pk])
+            if obj and self.has_view_or_change_permission(request, obj) and self.has_send_reminders_permission(request):
+                context['notify_participants_url'] = reverse('admin:shop_presentation_notify_participants', args=[obj.pk])
         return super().changeform_view(request, object_id, form_url, context)
+
+    def has_send_reminders_permission(self, request):
+        return request.user.has_perm('shop.send_presentation_reminders')
+
+    def notify_participants(self, request, object_id):
+        obj = self.get_object(request, object_id)
+        if obj is None:
+            raise Http404('Presentation not found.')
+        if not self.has_view_or_change_permission(request, obj) or not self.has_send_reminders_permission(request):
+            raise PermissionDenied
+        if request.method not in ('GET', 'POST'):
+            return HttpResponseNotAllowed(['GET', 'POST'])
+        error = None
+        if request.method == 'POST':
+            try:
+                if request.POST.get('confirm') != 'yes':
+                    raise ValueError('Please confirm the reminder emails.')
+                batch_id = reminder_batch(request.POST.get('confirmation_token', ''), obj)
+            except ValueError as failure:
+                error = str(failure)
+            else:
+                count = queue_reminders(obj, batch_id, request.user)
+                self.message_user(request, f'Queued {count} reminder emails. A repeated confirmation does not queue duplicates.', messages.SUCCESS)
+                return redirect(reverse('admin:shop_presentation_change', args=[obj.pk]))
+        subject, body = reminder_content(obj, 'شرکت‌کننده گرامی')
+        return TemplateResponse(request, 'admin/shop/presentation/reminder_confirmation.html', {
+            **self.admin_site.each_context(request), 'opts': self.model._meta,
+            'title': 'Send presentation reminder emails', 'presentation': obj,
+            'recipient_count': reminder_recipients(obj).count(), 'confirmation_token': confirmation_token(obj),
+            'email_subject': subject, 'email_body': body, 'error': error,
+            'cancel_url': reverse('admin:shop_presentation_change', args=[obj.pk]),
+            'delivery_url': reverse('admin:shop_presentationreminder_changelist') + f'?presentation__id__exact={obj.pk}',
+        }, status=400 if error else 200)
 
     def download_participants_excel(self, request, object_id):
         from django.core.exceptions import ImproperlyConfigured
@@ -248,6 +290,32 @@ class PresentationAdmin(SkyroomPresentationActions, admin.ModelAdmin):
                 }
 
         return JsonResponse(data)
+
+
+@admin.register(PresentationReminder)
+class PresentationReminderAdmin(admin.ModelAdmin):
+    list_display = ('presentation', 'recipient', 'status', 'attempts', 'created_at', 'sent_at', 'last_error', 'queued_by')
+    list_filter = ('status', 'presentation', 'created_at')
+    list_select_related = ('presentation', 'queued_by')
+    search_fields = ('recipient', 'presentation__en_title', 'presentation__fa_title')
+    readonly_fields = ('presentation', 'user', 'queued_by', 'batch_id', 'recipient', 'status',
+                       'attempts', 'created_at', 'available_at', 'sent_at', 'last_error')
+    actions = ['retry_failed']
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def has_send_reminders_permission(self, request):
+        return request.user.has_perm('shop.send_presentation_reminders')
+
+    @admin.action(description='Retry failed reminder emails', permissions=['send_reminders'])
+    def retry_failed(self, request, queryset):
+        from django.utils import timezone
+        count = queryset.filter(status='FAILED').update(status='PENDING', attempts=0, last_error='', available_at=timezone.now())
+        self.message_user(request, f'Requeued {count} reminder emails.')
 
 
 @admin.register(PresentationProposal)
