@@ -152,12 +152,8 @@ class PresentationViewSet(RetrieveAPIView, viewsets.ViewSet):
                 {'detail': 'Remove this item using the bundle removal endpoint.', 'code': 'bundle_item'},
                 status=status.HTTP_409_CONFLICT,
             )
-        if presentation.start <= timezone.now():
-            return Response(
-                {'detail': f'Cannot remove participation; presentation {presentation.en_title} has already started.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
+        # Start time and availability constrain buying, not removing unpaid
+        # cart items. Purchased registrations remain protected below.
         if participation.payment_state == "COMPLETED":
             return Response(
                 {'detail': f'Cannot remove participation; presentation {presentation.en_title} has already completed.'},

@@ -213,6 +213,87 @@ class PaymentFlowTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(Participation.objects.filter(pk=participation.pk).exists())
 
+    def test_unpaid_started_closed_and_sold_out_presentation_can_be_removed(self):
+        self.presentation.start = timezone.now() - timedelta(minutes=5)
+        self.presentation.end = timezone.now() + timedelta(minutes=55)
+        self.presentation.is_registration_active = False
+        self.presentation.capacity = 0
+        self.presentation.save()
+
+        response = self.client.delete(
+            reverse('presentation-remove-participation', args=[self.presentation.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Participation.objects.filter(pk=self.participation.pk).exists())
+
+    def test_unpaid_ended_presentation_can_be_removed_using_legacy_id(self):
+        self.presentation.start = timezone.now() - timedelta(hours=2)
+        self.presentation.end = timezone.now() - timedelta(hours=1)
+        self.presentation.save()
+        self.participation.delete()
+        participation = Participation.objects.create(user=self.user, presentation=self.presentation)
+        self.assertNotEqual(participation.pk, self.presentation.pk)
+
+        response = self.client.delete(
+            reverse('presentation-remove-participation', args=[participation.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Participation.objects.filter(pk=participation.pk).exists())
+
+    def test_purchased_started_presentation_stays_protected(self):
+        self.presentation.start = timezone.now() - timedelta(hours=2)
+        self.presentation.end = timezone.now() - timedelta(hours=1)
+        self.presentation.save()
+        self.participation.payment_state = 'COMPLETED'
+        self.participation.save()
+
+        response = self.client.delete(
+            reverse('presentation-remove-participation', args=[self.presentation.pk]))
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('completed', response.data['detail'])
+        self.participation.refresh_from_db()
+        self.assertEqual(self.participation.payment_state, 'COMPLETED')
+
+    @patch('shop.views.ZarrinPal.verify_payment')
+    def test_removing_started_item_retires_link_and_flags_late_payment_for_review(self, verify_payment):
+        self.presentation.start = timezone.now() - timedelta(minutes=5)
+        self.presentation.end = timezone.now() + timedelta(minutes=55)
+        self.presentation.save()
+        payment = Payment.objects.create(user=self.user, total_price='10000', authority='STARTEDREMOVED123')
+        payment.participations.add(self.participation)
+        verify_payment.return_value = {'status': 'success', 'ref_id': 'LATESTARTED123', 'card_pan': '1234'}
+
+        response = self.client.delete(
+            reverse('presentation-remove-participation', args=[self.presentation.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        verify_payment.assert_not_called()
+        self.assertFalse(Participation.objects.filter(pk=self.participation.pk).exists())
+        payment.refresh_from_db()
+        self.assertIsNotNone(payment.superseded_at)
+        self.assertEqual(payment.checkout_snapshot['presentations'][0]['id'], self.presentation.pk)
+        response = self.client.post(reverse('payment-verify'), {'authority': payment.authority})
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data['code'], 'payment_requires_review')
+        payment.refresh_from_db()
+        self.assertTrue(payment.requires_manual_review)
+        self.assertFalse(Participation.objects.filter(user=self.user, presentation=self.presentation).exists())
+
+    def test_started_presentation_cannot_be_removed_from_another_users_cart(self):
+        self.presentation.start = timezone.now() - timedelta(minutes=5)
+        self.presentation.save()
+        self.participation.delete()
+        other = User.objects.create_user(email='past-cart-other@example.com', phone_number='09120000990',
+                                         first_name='Other', last_name='User', is_active=True)
+        participation = Participation.objects.create(user=other, presentation=self.presentation)
+
+        response = self.client.delete(
+            reverse('presentation-remove-participation', args=[self.presentation.pk]))
+
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(Participation.objects.filter(pk=participation.pk).exists())
+
     @patch("shop.views.ZarrinPal.verify_payment")
     def test_remove_retires_recent_payment_immediately(self, verify_payment):
         payment = Payment.objects.create(
