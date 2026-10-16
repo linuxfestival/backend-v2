@@ -112,7 +112,7 @@ class PresentationViewSet(RetrieveAPIView, viewsets.ViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if presentation.start <= timezone.now():
+        if presentation.is_registration_time_closed():
             return Response(
                 {'detail': f'Presentation {presentation.en_title} has already started.'},
                 status=status.HTTP_400_BAD_REQUEST
@@ -296,7 +296,7 @@ class PaymentViewSet(viewsets.ViewSet):
         for participation in participations:
             presentation = locked_presentations[participation.presentation_id]
 
-            if presentation.start <= timezone.now():
+            if presentation.is_registration_time_closed():
                 return Response(
                     {'detail': f'Presentation {presentation.en_title} has already started.'},
                     status=status.HTTP_400_BAD_REQUEST

@@ -64,6 +64,10 @@ class Presentation(models.Model):
     fa_description = HTMLField()
     capacity = models.PositiveIntegerField(blank=False)
     is_registration_active = models.BooleanField(default=True)
+    allow_registration_after_start = models.BooleanField(
+        default=False,
+        help_text='Allow registration and checkout after the scheduled start. Registration must still be open and capacity available. Close registration manually when finished.',
+    )
     presentation_link = models.URLField(blank=True)
     is_skyroom = models.BooleanField(default=False, help_text='Enable Skyroom access for completed participants.')
     skyroom_room_url = models.URLField(blank=True, help_text='Room link shown to registered users and included in credential emails/exports.')
@@ -82,6 +86,9 @@ class Presentation(models.Model):
 
     def get_remained_capacity(self):
         return self._remaining_capacity(include_exempt=False)
+
+    def is_registration_time_closed(self, at=None):
+        return not self.allow_registration_after_start and self.start <= (at or timezone.now())
 
     def get_display_remained_capacity(self):
         return self._remaining_capacity(include_exempt=True)
@@ -128,7 +135,8 @@ class Bundle(models.Model):
             return 0, 'inactive'
         if len(items) < 2:
             return 0, 'insufficient_presentations'
-        if any(item.start <= timezone.now() for item in items):
+        at = timezone.now()
+        if any(item.is_registration_time_closed(at) for item in items):
             return 0, 'started'
         if any(not item.is_registration_active for item in items):
             return 0, 'registration_closed'

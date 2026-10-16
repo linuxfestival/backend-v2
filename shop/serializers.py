@@ -40,7 +40,7 @@ class PresentationSerializer(serializers.ModelSerializer):
         fields = [
             'service_type', 'capacity', 'start', 'end', 'fa_description', 'en_description', 'remained_capacity',
             'checkout_remaining_capacity',
-            'is_skyroom',
+            'is_skyroom', 'allow_registration_after_start',
             'id', 'cost', 'presenters', 'is_registration_active', 'presentation_link', 'tags', 'morkopoloyor',
             'fa_title', 'en_title'
         ]
